@@ -83,7 +83,7 @@ fun SwitchArchBottomSheet(
                     modifier = Modifier.weight(1f),
                     title = "32位 ARM",
                     icon = Icons.Filled.Smartphone,
-                    commands = listOf("e asm.arch=arm", "e anal.arch=arm", "e asm.bits=32", "e asm.endian=little"),
+                    commands = listOf("e asm.arch=arm", "e anal.arch=arm", "e asm.bits=32"),
                     onClick = applyArch,
                     isSwitching = isSwitching,
                     isSelected = false
@@ -92,7 +92,7 @@ fun SwitchArchBottomSheet(
                     modifier = Modifier.weight(1f),
                     title = "32位 ARM Thumb",
                     icon = Icons.Filled.Memory,
-                    commands = listOf("e anal.arch=arm", "e anal.bits=16", "e asm.endian=little"),
+                    commands = listOf("e anal.arch=arm", "e asm.bits=16"),
                     onClick = applyArch,
                     isSwitching = isSwitching,
                     isSelected = false
@@ -109,7 +109,7 @@ fun SwitchArchBottomSheet(
                     modifier = Modifier.weight(1f),
                     title = "64位 ARM",
                     icon = Icons.Filled.Language,
-                    commands = listOf("e asm.arch=arm", "e anal.arch=arm", "e asm.bits=64", "e asm.endian=little"),
+                    commands = listOf("e asm.arch=arm", "e anal.arch=arm", "e asm.bits=64"),
                     onClick = applyArch,
                     isSwitching = isSwitching,
                     isSelected = false
@@ -118,7 +118,7 @@ fun SwitchArchBottomSheet(
                     modifier = Modifier.weight(1f),
                     title = "x64",
                     icon = Icons.Filled.Computer,
-                    commands = listOf("e asm.arch=x86", "e asm.bits=64", "e asm.syntax=intel", "e asm.endian=little"),
+                    commands = listOf("e asm.arch=x86", "e asm.bits=64", "e asm.syntax=intel"),
                     onClick = applyArch,
                     isSwitching = isSwitching,
                     isSelected = false
@@ -135,6 +135,7 @@ fun SwitchArchBottomSheet(
                 supportingContent = { Text(stringResource(R.string.switch_arch_default_desc)) },
                 leadingContent = {
                     Icon(Icons.Filled.Restore, contentDescription = null)
+
                 },
                 modifier = Modifier.clickable(enabled = !isSwitching) {
                     // Restore to some defaults that just unset user options
