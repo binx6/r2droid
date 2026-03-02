@@ -597,7 +597,7 @@
     <!-- Features -->
     <string name="features_title">功能</string>
     <string name="feature_r2frida_title">r2frida</string>
-    <string name="feature_r2frida_desc">强大的动态插桩工具集成 (开发中)</string>
+    <string name="feature_r2frida_desc">强大的动态插桩工具集成</string>
     <string name="feature_custom_start_title">自定义启动</string>
     <string name="feature_custom_start_desc">运行完全自定义的 R2 指令</string>
     <string name="feature_terminal_title">高级终端</string>
@@ -605,7 +605,7 @@
     <string name="feature_manual_title">R2 使用手册</string>
     <string name="feature_manual_desc">查阅离线的 Radare2 指令帮助</string>
     <string name="feature_plugins_title">插件管理</string>
-    <string name="feature_plugins_desc">安装和管理扩展功能 (开发中)</string>
+    <string name="feature_plugins_desc">安装和管理扩展功能</string>
     <string name="plugin_status_prefix">状态：%1$s</string>
     <string name="plugin_repositories_title">仓库源</string>
     <string name="plugin_add_source_hint">索引地址</string>
@@ -629,7 +629,11 @@
     <string name="plugin_desc_expand">展开描述</string>
     <string name="plugin_desc_collapse">收起描述</string>
     <string name="plugin_install_zip">从 ZIP 安装</string>
+    <string name="plugin_edit_source">编辑源</string>
+    <string name="plugin_restore_default_sources">恢复默认源</string>
     <string name="plugin_developer_mode">开发者模式</string>
+    <string name="plugin_uninstall_confirm_title">确认卸载</string>
+    <string name="plugin_uninstall_confirm_message">确定要卸载插件“%1$s”吗？</string>
     <string name="plugin_developer_workspace_empty">未选择工作区</string>
     <string name="plugin_developer_select_workspace">选择工作区</string>
     <string name="plugin_developer_create_plugin">创建插件</string>

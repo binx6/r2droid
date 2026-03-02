@@ -19,9 +19,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -198,7 +200,16 @@ fun PluginManagerScreen(
                             sourceInput = ""
                         }
                     },
+                    onEdit = { oldRepo, newRepo ->
+                        scope.launch {
+                            PluginManager.updateRepositorySource(oldRepo, newRepo)
+                            if (sourceInput == oldRepo) {
+                                sourceInput = newRepo
+                            }
+                        }
+                    },
                     onRemove = { repo -> scope.launch { PluginManager.removeRepositorySource(repo) } },
+                    onResetDefault = { scope.launch { PluginManager.resetRepositorySourcesToDefault() } },
                     onInstallZip = { zipPickerLauncher.launch("application/zip") },
                     onSetDeveloperMode = { enabled ->
                         scope.launch { PluginManager.setDeveloperModeEnabled(enabled) }
@@ -235,6 +246,7 @@ private fun PluginListTab(
 
     val expandedDescriptions = remember { mutableStateMapOf<String, Boolean>() }
     val expandableDescriptions = remember { mutableStateMapOf<String, Boolean>() }
+    var pendingDeletePlugin by remember { mutableStateOf<InstalledPlugin?>(null) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -308,7 +320,7 @@ private fun PluginListTab(
                         }
                         if (!isBundledAsset) {
                             IconButton(
-                                onClick = { onDelete(plugin.state.id) },
+                                onClick = { pendingDeletePlugin = plugin },
                                 enabled = !isWorking
                             ) {
                                 Icon(
@@ -436,6 +448,32 @@ private fun PluginListTab(
             }
         }
     }
+
+    val pluginToDelete = pendingDeletePlugin
+    if (pluginToDelete != null) {
+        val displayName = pluginToDelete.manifest?.name?.ifBlank { pluginToDelete.state.id } ?: pluginToDelete.state.id
+        AlertDialog(
+            onDismissRequest = { pendingDeletePlugin = null },
+            title = { Text(stringResource(R.string.plugin_uninstall_confirm_title)) },
+            text = { Text(stringResource(R.string.plugin_uninstall_confirm_message, displayName)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDelete(pluginToDelete.state.id)
+                        pendingDeletePlugin = null
+                    },
+                    enabled = !isWorking
+                ) {
+                    Text(stringResource(R.string.plugin_uninstall))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeletePlugin = null }) {
+                    Text(stringResource(R.string.plugin_developer_create_cancel))
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -446,13 +484,17 @@ private fun SourceManageTab(
     isWorking: Boolean,
     developerConfig: PluginDeveloperConfig,
     onAdd: () -> Unit,
+    onEdit: (String, String) -> Unit,
     onRemove: (String) -> Unit,
+    onResetDefault: () -> Unit,
     onInstallZip: () -> Unit,
     onSetDeveloperMode: (Boolean) -> Unit,
     onPickDeveloperWorkspace: () -> Unit,
     onCreateDeveloperPlugin: (DeveloperPluginCreateRequest) -> Unit
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
+    var editingRepo by remember { mutableStateOf<String?>(null) }
+    var editingSourceInput by remember { mutableStateOf("") }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -489,11 +531,17 @@ private fun SourceManageTab(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
-                Button(
-                    onClick = onInstallZip,
+                TextButton(
+                    onClick = onResetDefault,
                     enabled = !isWorking
                 ) {
-                    Text(stringResource(R.string.plugin_install_zip))
+                    Icon(
+                        imageVector = Icons.Default.Restore,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(stringResource(R.string.plugin_restore_default_sources))
                 }
             }
         }
@@ -546,6 +594,12 @@ private fun SourceManageTab(
                             ) {
                                 Text(stringResource(R.string.plugin_developer_create_plugin))
                             }
+                            Button(
+                                onClick = onInstallZip,
+                                enabled = !isWorking
+                            ) {
+                                Text(stringResource(R.string.plugin_install_zip))
+                            }
                         }
                     }
                 }
@@ -563,11 +617,20 @@ private fun SourceManageTab(
                     Text(
                         text = repo,
                         modifier = Modifier.weight(1f),
-                        maxLines = 1,
+                        maxLines = 3,
                         overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    TextButton(onClick = { onRemove(repo) }) {
+                    IconButton(
+                        onClick = {
+                            editingRepo = repo
+                            editingSourceInput = repo
+                        },
+                        enabled = !isWorking
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.plugin_edit_source))
+                    }
+                    TextButton(onClick = { onRemove(repo) }, enabled = !isWorking) {
                         Text(stringResource(R.string.plugin_remove_source))
                     }
                 }
@@ -581,6 +644,45 @@ private fun SourceManageTab(
             onConfirm = { request ->
                 onCreateDeveloperPlugin(request)
                 showCreateDialog = false
+            }
+        )
+    }
+
+    val currentEditingRepo = editingRepo
+    if (currentEditingRepo != null) {
+        AlertDialog(
+            onDismissRequest = {
+                editingRepo = null
+                editingSourceInput = ""
+            },
+            title = { Text(stringResource(R.string.plugin_edit_source)) },
+            text = {
+                OutlinedTextField(
+                    value = editingSourceInput,
+                    onValueChange = { editingSourceInput = it },
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.plugin_add_source_hint)) }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onEdit(currentEditingRepo, editingSourceInput)
+                        editingRepo = null
+                        editingSourceInput = ""
+                    },
+                    enabled = editingSourceInput.isNotBlank() && !isWorking
+                ) {
+                    Text(stringResource(R.string.plugin_developer_create_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    editingRepo = null
+                    editingSourceInput = ""
+                }) {
+                    Text(stringResource(R.string.plugin_developer_create_cancel))
+                }
             }
         )
     }

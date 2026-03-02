@@ -268,12 +268,33 @@ object PluginManager {
         runCatching {
             val normalized = normalizeRepositorySource(url)
             if (normalized.isBlank()) error("empty source url")
-            val current = _repositorySources.value.toMutableList()
-            if (current.none { it.equals(normalized, ignoreCase = true) }) {
-                current += normalized
+            val current = _repositorySources.value.toMutableList().apply {
+                if (none { it.equals(normalized, ignoreCase = true) }) {
+                    add(normalized)
+                }
             }
-            writeRepositorySources(current)
-            _repositorySources.value = current
+            val deduped = deduplicateSourcesIgnoreCase(current)
+            writeRepositorySources(deduped)
+            _repositorySources.value = deduped
+            refreshCatalog()
+        }
+    }
+
+    suspend fun updateRepositorySource(oldUrl: String, newUrl: String): Result<Unit> = withContext(Dispatchers.IO) {
+        ensureInitialized()
+        runCatching {
+            val oldNormalized = normalizeRepositorySource(oldUrl)
+            val newNormalized = normalizeRepositorySource(newUrl)
+            if (newNormalized.isBlank()) error("empty source url")
+
+            val current = _repositorySources.value.toMutableList()
+            val index = current.indexOfFirst { it.equals(oldNormalized, ignoreCase = true) }
+            if (index < 0) error("source not found")
+
+            current[index] = newNormalized
+            val deduped = deduplicateSourcesIgnoreCase(current)
+            writeRepositorySources(deduped)
+            _repositorySources.value = deduped
             refreshCatalog()
         }
     }
@@ -283,8 +304,19 @@ object PluginManager {
         runCatching {
             val normalized = normalizeRepositorySource(url)
             val current = _repositorySources.value.filterNot { it.equals(normalized, ignoreCase = true) }
-            writeRepositorySources(current)
-            _repositorySources.value = current
+            val deduped = deduplicateSourcesIgnoreCase(current)
+            writeRepositorySources(deduped)
+            _repositorySources.value = deduped
+            refreshCatalog()
+        }
+    }
+
+    suspend fun resetRepositorySourcesToDefault(): Result<Unit> = withContext(Dispatchers.IO) {
+        ensureInitialized()
+        runCatching {
+            val defaults = listOf(DEFAULT_REMOTE_INDEX)
+            writeRepositorySources(defaults)
+            _repositorySources.value = defaults
             refreshCatalog()
         }
     }
@@ -648,6 +680,18 @@ object PluginManager {
         if (sortedPrev != sortedNext) {
             writeInstalledStates(sortedNext)
         }
+    }
+
+    private fun deduplicateSourcesIgnoreCase(sources: List<String>): List<String> {
+        val seen = linkedSetOf<String>()
+        val result = mutableListOf<String>()
+        sources.forEach { source ->
+            val key = source.lowercase()
+            if (seen.add(key)) {
+                result += source
+            }
+        }
+        return result
     }
 
     private fun normalizeRepositorySource(source: String): String {

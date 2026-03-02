@@ -598,7 +598,7 @@
     <!-- Features -->
     <string name="features_title">Возможности</string>
     <string name="feature_r2frida_title">r2frida</string>
-    <string name="feature_r2frida_desc">Мощная интеграция с динамической инструментацией (в разработке)</string>
+    <string name="feature_r2frida_desc">Мощная интеграция с динамической инструментацией</string>
     <string name="feature_custom_start_title">Свой запуск</string>
     <string name="feature_custom_start_desc">Запуск полностью произвольной команды R2</string>
     <string name="feature_terminal_title">Продвинутый терминал</string>
@@ -606,7 +606,7 @@
     <string name="feature_manual_title">Руководство r2</string>
     <string name="feature_manual_desc">Офлайн справка по командам Radare2</string>
     <string name="feature_plugins_title">Управление плагинами</string>
-    <string name="feature_plugins_desc">Установка и управление расширениями (в разработке)</string>
+    <string name="feature_plugins_desc">Установка и управление расширениями</string>
     <string name="features_custom_start_dialog_title">Своя команда R2</string>
     <string name="features_custom_start_hint">Полная команда</string>
     <string name="features_custom_start_examples">напр. r2 -  или  r2 \"frida://attach/pid\"</string>

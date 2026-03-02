@@ -595,7 +595,7 @@
     <!-- Features -->
     <string name="features_title">Features</string>
     <string name="feature_r2frida_title">r2frida</string>
-    <string name="feature_r2frida_desc">Powerful dynamic instrumentation integration (WIP)</string>
+    <string name="feature_r2frida_desc">Powerful dynamic instrumentation integration</string>
     <string name="feature_custom_start_title">Custom Start</string>
     <string name="feature_custom_start_desc">Run a fully custom R2 command</string>
     <string name="feature_terminal_title">Advanced Terminal</string>
@@ -603,7 +603,7 @@
     <string name="feature_manual_title">R2 User Manual</string>
     <string name="feature_manual_desc">Browse offline Radare2 command help</string>
     <string name="feature_plugins_title">Plugin Management</string>
-    <string name="feature_plugins_desc">Install and manage extended features (WIP)</string>
+    <string name="feature_plugins_desc">Install and manage extended features</string>
     <string name="plugin_status_prefix">Status: %1$s</string>
     <string name="plugin_repositories_title">Repositories</string>
     <string name="plugin_add_source_hint">Index URL </string>
@@ -627,7 +627,11 @@
     <string name="plugin_desc_expand">Expand description</string>
     <string name="plugin_desc_collapse">Collapse description</string>
     <string name="plugin_install_zip">Install from ZIP</string>
+    <string name="plugin_edit_source">Edit source</string>
+    <string name="plugin_restore_default_sources">Restore default sources</string>
     <string name="plugin_developer_mode">Developer Mode</string>
+    <string name="plugin_uninstall_confirm_title">Confirm uninstall</string>
+    <string name="plugin_uninstall_confirm_message">Are you sure you want to uninstall plugin "%1$s"?</string>
     <string name="plugin_developer_workspace_empty">No workspace selected</string>
     <string name="plugin_developer_select_workspace">Select Workspace</string>
     <string name="plugin_developer_create_plugin">Create Plugin</string>
