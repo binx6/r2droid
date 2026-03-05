@@ -1,14 +1,20 @@
 package top.wsdx233.r2droid.feature.project
 
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -22,18 +28,17 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Text
@@ -49,12 +54,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import kotlinx.coroutines.launch
@@ -87,58 +95,51 @@ fun ProjectScreen(
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet(modifier = Modifier.fillMaxWidth(0.7f)) {
-                Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-                    Button(
+            ModalDrawerSheet(modifier = Modifier.fillMaxWidth(0.82f)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp, vertical = 20.dp)
+                ) {
+                    FilledTonalButton(
                         onClick = {
                             drawerScope.launch { drawerState.close() }
                             onNavigateBack()
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        shape = RoundedCornerShape(20.dp)
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null)
-                        Text("  ${stringResource(R.string.session_new)}")
+                        Spacer(modifier = Modifier.size(10.dp))
+                        Text(stringResource(R.string.session_new), style = MaterialTheme.typography.titleMedium)
                     }
 
+                    Spacer(modifier = Modifier.height(12.dp))
+
                     LazyColumn(
-                        modifier = Modifier.weight(1f).padding(top = 8.dp)
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(sessions.values.toList(), key = { it.sessionId }) { session ->
-                            NavigationDrawerItem(
-                                label = {
-                                    Column {
-                                        Text(session.projectInfo.title, maxLines = 1)
-                                        if (session.projectInfo.subtitle.isNotBlank()) {
-                                            Text(
-                                                session.projectInfo.subtitle,
-                                                maxLines = 1,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                },
-                                selected = session.sessionId == activeSessionId,
+                            val isSelected = session.sessionId == activeSessionId
+                            SessionDrawerItem(
+                                title = session.projectInfo.title,
+                                subtitle = session.projectInfo.subtitle,
+                                selected = isSelected,
+                                showFridaBadge = session.isFridaSession,
                                 onClick = {
                                     R2PipeManager.switchActiveSession(session.sessionId)
                                     drawerScope.launch { drawerState.close() }
                                 },
-                                badge = {
-                                    if (session.isFridaSession) {
-                                        Text("Frida", style = MaterialTheme.typography.labelSmall)
-                                    }
-                                },
-                                icon = {
-                                    IconButton(onClick = {
-                                        drawerScope.launch {
-                                            val isLastSession = sessions.size <= 1
-                                            R2PipeManager.closeSession(session.sessionId)
-                                            if (isLastSession) {
-                                                onNavigateBack()
-                                            }
+                                onClose = {
+                                    drawerScope.launch {
+                                        val isLastSession = sessions.size <= 1
+                                        R2PipeManager.closeSession(session.sessionId)
+                                        if (isLastSession) {
+                                            onNavigateBack()
                                         }
-                                    }) {
-                                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.session_close))
                                     }
                                 }
                             )
@@ -149,20 +150,38 @@ fun ProjectScreen(
 
                     Text(
                         text = stringResource(R.string.session_tools_title),
-                        style = MaterialTheme.typography.titleSmall,
+                        style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(vertical = 8.dp)
                     )
 
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(2),
-                        modifier = Modifier.height(250.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.heightIn(max = 260.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        userScrollEnabled = false
                     ) {
                         items(UtilityTool.entries) { tool ->
-                            Button(onClick = { selectedUtility = tool }, modifier = Modifier.fillMaxWidth()) {
-                                Icon(tool.icon, contentDescription = null)
-                                Text("  ${stringResource(tool.titleRes)}")
+                            FilledTonalButton(
+                                onClick = { selectedUtility = tool },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(74.dp),
+                                shape = RoundedCornerShape(18.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(tool.icon, contentDescription = null)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = stringResource(tool.titleRes),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
                             }
                         }
                     }
@@ -365,6 +384,74 @@ fun ProjectScreen(
 
     toolResultDialog?.let { result ->
         ToolResultDialog(result = result, onDismiss = { toolResultDialog = null })
+    }
+}
+
+@Composable
+private fun SessionDrawerItem(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    showFridaBadge: Boolean,
+    onClick: () -> Unit,
+    onClose: () -> Unit
+) {
+    val containerColor = if (selected) {
+        MaterialTheme.colorScheme.secondaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(containerColor)
+            .clickable(onClick = onClick)
+            .padding(start = 14.dp, end = 6.dp, top = 12.dp, bottom = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .clip(RoundedCornerShape(99.dp))
+                .background(
+                    if (selected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.outlineVariant
+                )
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                maxLines = 1,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (subtitle.isNotBlank()) {
+                Text(
+                    text = subtitle,
+                    maxLines = 1,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (showFridaBadge) {
+                Text(
+                    text = "Frida",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+        }
+
+        IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = stringResource(R.string.session_close)
+            )
+        }
     }
 }
 
