@@ -4,13 +4,19 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.UriPermission
+import android.net.Uri
 import android.os.PowerManager
+import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -60,6 +66,71 @@ import top.wsdx233.r2droid.service.KeepAliveService
 import top.wsdx233.r2droid.util.UpdateManager
 import java.io.File
 
+data class PersistedTreeAccess(
+    val uri: Uri,
+    val title: String,
+    val summary: String
+)
+
+private fun queryPersistedTreeAccess(context: Context): List<PersistedTreeAccess> {
+    return context.contentResolver.persistedUriPermissions
+        .asSequence()
+        .filter { DocumentsContract.isTreeUri(it.uri) }
+        .filter { it.isReadPermission || it.isWritePermission }
+        .sortedByDescending { it.persistedTime }
+        .map { permission ->
+            val accessLabel = if (permission.isWritePermission) {
+                context.getString(R.string.settings_saf_permission_read_write)
+            } else {
+                context.getString(R.string.settings_saf_permission_read_only)
+            }
+            PersistedTreeAccess(
+                uri = permission.uri,
+                title = resolveTreeAccessTitle(context, permission.uri),
+                summary = listOfNotNull(permission.uri.authority, accessLabel).joinToString(" · ")
+            )
+        }
+        .toList()
+}
+
+private fun resolveTreeAccessTitle(context: Context, uri: Uri): String {
+    val documentUri = runCatching {
+        DocumentsContract.buildDocumentUriUsingTree(uri, DocumentsContract.getTreeDocumentId(uri))
+    }.getOrNull()
+    val displayName = documentUri?.let { queryDisplayName(context, it) }
+    if (!displayName.isNullOrBlank()) {
+        return displayName
+    }
+
+    val treeId = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
+    return treeId?.replace(':', '/')?.takeIf { it.isNotBlank() } ?: uri.toString()
+}
+
+private fun queryDisplayName(context: Context, uri: Uri): String? {
+    return runCatching {
+        context.contentResolver.query(
+            uri,
+            arrayOf(OpenableColumns.DISPLAY_NAME),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
+    }.getOrNull()
+}
+
+private fun persistedUriFlags(permission: UriPermission): Int {
+    var flags = 0
+    if (permission.isReadPermission) {
+        flags = flags or Intent.FLAG_GRANT_READ_URI_PERMISSION
+    }
+    if (permission.isWritePermission) {
+        flags = flags or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+    }
+    return if (flags == 0) Intent.FLAG_GRANT_READ_URI_PERMISSION else flags
+}
+
 class SettingsViewModel : ViewModel() {
     // R2RC Content State
     private val _r2rcContent = MutableStateFlow("")
@@ -73,6 +144,9 @@ class SettingsViewModel : ViewModel() {
 
     private val _projectHome = MutableStateFlow(SettingsManager.projectHome)
     val projectHome = _projectHome.asStateFlow()
+
+    private val _persistedTreeAccess = MutableStateFlow<List<PersistedTreeAccess>>(emptyList())
+    val persistedTreeAccess = _persistedTreeAccess.asStateFlow()
 
     private val _darkMode = MutableStateFlow(SettingsManager.darkMode)
     val darkMode = _darkMode.asStateFlow()
@@ -117,10 +191,44 @@ class SettingsViewModel : ViewModel() {
     fun loadR2rcContent(context: Context) {
         _r2rcContent.value = SettingsManager.getR2rcContent(context)
     }
+
+    fun loadPersistedTreeAccess(context: Context) {
+        _persistedTreeAccess.value = queryPersistedTreeAccess(context)
+    }
     
     fun saveR2rcContent(context: Context, content: String) {
         SettingsManager.setR2rcContent(context, content)
         _r2rcContent.value = content
+    }
+
+    fun addPersistedTreeAccess(context: Context, uri: Uri): Boolean {
+        val resolver = context.contentResolver
+        val granted = runCatching {
+            resolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        }.recoverCatching {
+            resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }.isSuccess
+
+        if (granted) {
+            loadPersistedTreeAccess(context)
+        }
+        return granted
+    }
+
+    fun revokePersistedTreeAccess(context: Context, uri: Uri) {
+        val resolver = context.contentResolver
+        runCatching {
+            resolver.releasePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        }.recoverCatching {
+            resolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        loadPersistedTreeAccess(context)
     }
     
     fun setFontPath(path: String?) {
@@ -249,6 +357,14 @@ class SettingsViewModel : ViewModel() {
     }
 
     fun resetAll(context: Context) {
+        context.contentResolver.persistedUriPermissions.forEach { permission ->
+            runCatching {
+                context.contentResolver.releasePersistableUriPermission(
+                    permission.uri,
+                    persistedUriFlags(permission)
+                )
+            }
+        }
         SettingsManager.fontPath = null
         SettingsManager.language = "system"
         SettingsManager.projectHome = null
@@ -283,6 +399,7 @@ class SettingsViewModel : ViewModel() {
         _useHttpMode.value = false
         _httpPort.value = 9090
         _defaultJumpTarget.value = "ask"
+        loadPersistedTreeAccess(context)
     }
 }
 
@@ -297,6 +414,7 @@ fun SettingsScreen(
     val fontPath by viewModel.fontPath.collectAsState()
     val language by viewModel.language.collectAsState()
     val projectHome by viewModel.projectHome.collectAsState()
+    val persistedTreeAccess by viewModel.persistedTreeAccess.collectAsState()
     val darkMode by viewModel.darkMode.collectAsState()
     val decompilerShowLineNumbers by viewModel.decompilerShowLineNumbers.collectAsState()
     val decompilerWordWrap by viewModel.decompilerWordWrap.collectAsState()
@@ -315,6 +433,7 @@ fun SettingsScreen(
     
     LaunchedEffect(Unit) {
         viewModel.loadR2rcContent(context)
+        viewModel.loadPersistedTreeAccess(context)
     }
     
     var showLanguageDialog by remember { mutableStateOf(false) }
@@ -322,6 +441,7 @@ fun SettingsScreen(
     var showDarkModeDialog by remember { mutableStateOf(false) }
     var showRestartDialog by remember { mutableStateOf(false) }
     var showMigrateDialog by remember { mutableStateOf(false) }
+    var showSafPermissionsDialog by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
     var showDecompilerDialog by remember { mutableStateOf(false) }
     var showAiProviderSettings by remember { mutableStateOf(false) }
@@ -352,6 +472,19 @@ fun SettingsScreen(
                 pendingNewProjectHome = newPath
                 showMigrateDialog = true
             }
+        }
+    }
+
+    val safDirPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let {
+            val granted = viewModel.addPersistedTreeAccess(context, it)
+            Toast.makeText(
+                context,
+                context.getString(
+                    if (granted) R.string.settings_saf_grant_success else R.string.settings_saf_grant_failed
+                ),
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
@@ -419,6 +552,38 @@ fun SettingsScreen(
                         tempMaxLog = maxLogEntries.toString()
                         showMaxLogDialog = true
                     }
+                )
+            }
+
+            item {
+                HorizontalDivider()
+                SettingsSectionHeader(stringResource(R.string.settings_storage_access))
+            }
+
+            item {
+                SettingsItem(
+                    title = stringResource(R.string.settings_saf_grant_folder),
+                    subtitle = stringResource(R.string.settings_saf_grant_folder_desc),
+                    icon = Icons.Default.Folder,
+                    onClick = { safDirPicker.launch(null) }
+                )
+            }
+
+            item {
+                val safSummary = if (persistedTreeAccess.isEmpty()) {
+                    stringResource(R.string.settings_saf_manage_folders_desc)
+                } else {
+                    stringResource(
+                        R.string.settings_saf_granted_count_with_first,
+                        persistedTreeAccess.size,
+                        persistedTreeAccess.first().title
+                    )
+                }
+                SettingsItem(
+                    title = stringResource(R.string.settings_saf_manage_folders),
+                    subtitle = safSummary,
+                    icon = Icons.Default.Folder,
+                    onClick = { showSafPermissionsDialog = true }
                 )
             }
 
@@ -786,6 +951,48 @@ fun SettingsScreen(
                     pendingNewProjectHome = null
                 }) {
                     Text(stringResource(R.string.settings_migrate_no))
+                }
+            }
+        )
+    }
+
+    if (showSafPermissionsDialog) {
+        val scrollState = rememberScrollState()
+        AlertDialog(
+            onDismissRequest = { showSafPermissionsDialog = false },
+            title = { Text(stringResource(R.string.settings_saf_dialog_title)) },
+            text = {
+                if (persistedTreeAccess.isEmpty()) {
+                    Text(stringResource(R.string.settings_saf_dialog_empty))
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 320.dp)
+                            .verticalScroll(scrollState)
+                    ) {
+                        persistedTreeAccess.forEachIndexed { index, grant ->
+                            ListItem(
+                                headlineContent = { Text(grant.title) },
+                                supportingContent = { Text(grant.summary) },
+                                trailingContent = {
+                                    TextButton(onClick = {
+                                        viewModel.revokePersistedTreeAccess(context, grant.uri)
+                                    }) {
+                                        Text(stringResource(R.string.settings_saf_revoke))
+                                    }
+                                }
+                            )
+                            if (index != persistedTreeAccess.lastIndex) {
+                                HorizontalDivider()
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSafPermissionsDialog = false }) {
+                    Text(stringResource(R.string.settings_cancel))
                 }
             }
         )

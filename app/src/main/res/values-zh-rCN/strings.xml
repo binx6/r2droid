@@ -396,6 +396,21 @@
     <string name="settings_dir_picker_title">选择目录</string>
     <string name="settings_file_picker_title">选择文件</string>
     <string name="settings_reset">重置</string>
+    <string name="settings_storage_access">存储访问</string>
+    <string name="settings_saf_grant_folder">授予文件夹访问权限</string>
+    <string name="settings_saf_grant_folder_desc">通过 SAF 授权访问 SD 卡、文档提供器或其他应用暴露的文件夹</string>
+    <string name="settings_saf_manage_folders">已授权的 SAF 文件夹</string>
+    <string name="settings_saf_manage_folders_desc">查看或撤销已持久化的 SAF 文件夹权限</string>
+    <string name="settings_saf_granted_count_with_first">已授权 %1$d 个文件夹 · %2$s</string>
+    <string name="settings_saf_dialog_title">文件夹访问授权</string>
+    <string name="settings_saf_dialog_empty">暂未持久化任何 SAF 文件夹权限</string>
+    <string name="settings_saf_permission_read_only">只读</string>
+    <string name="settings_saf_permission_read_write">读写</string>
+    <string name="settings_saf_revoke">移除</string>
+    <string name="settings_saf_grant_success">文件夹访问权限已授予</string>
+    <string name="settings_saf_grant_failed">持久化文件夹权限失败</string>
+    <string name="document_provider_root_title">R2Droid 内部文件</string>
+    <string name="document_provider_root_summary">可在兼容 SAF 的文件管理器中浏览应用私有文件</string>
 
     <!-- Home New -->
     <string name="home_saved_projects">已保存的项目</string>

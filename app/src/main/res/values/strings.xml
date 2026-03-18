@@ -89,6 +89,21 @@
     <string name="settings_dir_picker_title">Select Directory</string>
     <string name="settings_file_picker_title">Select File</string>
     <string name="settings_reset">Reset</string>
+    <string name="settings_storage_access">Storage Access</string>
+    <string name="settings_saf_grant_folder">Grant Folder Access</string>
+    <string name="settings_saf_grant_folder_desc">Use SAF to authorize folders exposed by SD cards, document providers, or other apps</string>
+    <string name="settings_saf_manage_folders">Granted SAF Folders</string>
+    <string name="settings_saf_manage_folders_desc">Review or revoke persisted SAF folder permissions</string>
+    <string name="settings_saf_granted_count_with_first">%1$d folders authorized · %2$s</string>
+    <string name="settings_saf_dialog_title">Granted Folder Access</string>
+    <string name="settings_saf_dialog_empty">No persisted SAF folder permissions yet</string>
+    <string name="settings_saf_permission_read_only">Read-only</string>
+    <string name="settings_saf_permission_read_write">Read/Write</string>
+    <string name="settings_saf_revoke">Remove</string>
+    <string name="settings_saf_grant_success">Folder access granted</string>
+    <string name="settings_saf_grant_failed">Failed to persist folder access</string>
+    <string name="document_provider_root_title">R2Droid Internal Files</string>
+    <string name="document_provider_root_summary">Browse app-private files from SAF-compatible file managers</string>
     <!-- About Screen -->
     <string name="about_title">About This</string>
     <string name="about_back_desc">Back</string>
