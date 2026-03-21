@@ -45,6 +45,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import top.wsdx233.r2droid.activity.TerminalActivity
+import top.wsdx233.r2droid.util.DocumentsUiOpenDocumentTreeContract
 import top.wsdx233.r2droid.util.R2PipeManager
 import top.wsdx233.r2droid.util.UriUtils
 import java.io.File
@@ -148,7 +149,7 @@ private fun WebViewPluginPage(
         }
     }
 
-    val dirPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+    val dirPickerLauncher = rememberLauncherForActivityResult(DocumentsUiOpenDocumentTreeContract()) { uri ->
         val requestId = pendingDirRequestId
         if (requestId != null) {
             val pathResult = uri?.let { UriUtils.getTreePath(context, it) }

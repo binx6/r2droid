@@ -100,6 +100,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import top.wsdx233.r2droid.R
+import top.wsdx233.r2droid.util.DocumentsUiOpenDocumentTreeContract
 import top.wsdx233.r2droid.util.UriUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -131,7 +132,7 @@ fun PluginManagerScreen(
         }
     }
 
-    val workspacePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+    val workspacePickerLauncher = rememberLauncherForActivityResult(DocumentsUiOpenDocumentTreeContract()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         val path = UriUtils.getTreePath(context, uri) ?: return@rememberLauncherForActivityResult
         scope.launch {

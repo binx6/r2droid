@@ -63,6 +63,7 @@ import kotlinx.coroutines.MainScope
 import org.json.JSONArray
 import org.json.JSONObject
 import top.wsdx233.r2droid.service.KeepAliveService
+import top.wsdx233.r2droid.util.DocumentsUiOpenDocumentTreeContract
 import top.wsdx233.r2droid.util.UpdateManager
 import java.io.File
 
@@ -464,7 +465,7 @@ fun SettingsScreen(
         }
     }
     
-    val dirPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+    val dirPicker = rememberLauncherForActivityResult(DocumentsUiOpenDocumentTreeContract()) { uri ->
         uri?.let {
             val newPath = UriUtils.getTreePath(context, it)
             if (newPath != null) {
@@ -475,7 +476,7 @@ fun SettingsScreen(
         }
     }
 
-    val safDirPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+    val safDirPicker = rememberLauncherForActivityResult(DocumentsUiOpenDocumentTreeContract()) { uri ->
         uri?.let {
             val granted = viewModel.addPersistedTreeAccess(context, it)
             Toast.makeText(
