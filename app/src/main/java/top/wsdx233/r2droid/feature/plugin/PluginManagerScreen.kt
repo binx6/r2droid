@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Archive
@@ -33,6 +36,7 @@ import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -281,6 +285,7 @@ private fun PluginListTab(
     val expandedDescriptions = remember { mutableStateMapOf<String, Boolean>() }
     val expandableDescriptions = remember { mutableStateMapOf<String, Boolean>() }
     var pendingDeletePlugin by remember { mutableStateOf<InstalledPlugin?>(null) }
+    var selectedPlugin by remember { mutableStateOf<InstalledPlugin?>(null) }
     var pendingIncompatibleInstall by remember {
         mutableStateOf<Pair<PluginIndexEntry, PluginVersionCompatibility>?>(null)
     }
@@ -303,10 +308,15 @@ private fun PluginListTab(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clickable { selectedPlugin = plugin }
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     val uiOptions = plugin.manifest?.ui ?: PluginUiOptions()
+                    val descriptionText = plugin.manifest?.description
+                        ?.takeIf { it.isNotBlank() }
+                        ?: plugin.manifest?.author?.takeIf { it.isNotBlank() }
+                        ?: plugin.state.sourceUrl
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = plugin.manifest?.name ?: plugin.state.id,
@@ -335,8 +345,12 @@ private fun PluginListTab(
                                 }
                             )
                         }
-                        PluginPermissionSummary(
-                            permissions = plugin.manifest?.permissions.orEmpty(),
+                        Text(
+                            text = descriptionText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(top = 4.dp)
                         )
                     }
@@ -544,25 +558,115 @@ private fun PluginListTab(
             }
         )
     }
+
+    selectedPlugin?.let { plugin ->
+        PluginDetailDialog(
+            plugin = plugin,
+            onDismiss = { selectedPlugin = null }
+        )
+    }
 }
 
 @Composable
 private fun PluginPermissionSummary(
     permissions: List<String>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    emptyText: String? = null
 ) {
-    if (permissions.isEmpty()) return
-
     val labels = permissions.distinct().map { permission ->
         pluginPermissionLabel(permission)?.let { stringResource(it) } ?: permission
     }
+    val content = if (labels.isNotEmpty()) {
+        labels.joinToString(", ")
+    } else {
+        emptyText ?: return
+    }
 
     Text(
-        text = stringResource(R.string.plugin_permissions_prefix, labels.joinToString(", ")),
+        text = stringResource(R.string.plugin_permissions_prefix, content),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier
     )
+}
+
+@Composable
+private fun PluginDetailDialog(
+    plugin: InstalledPlugin,
+    onDismiss: () -> Unit
+) {
+    val manifest = plugin.manifest
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(manifest?.name?.ifBlank { plugin.state.id } ?: plugin.state.id)
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                PluginDetailField(stringResource(R.string.plugin_developer_plugin_id), plugin.state.id)
+                PluginDetailField(stringResource(R.string.plugin_developer_plugin_version), plugin.state.version)
+                PluginDetailField(
+                    stringResource(R.string.plugin_enabled),
+                    if (plugin.state.enabled) stringResource(R.string.plugin_state_enabled) else stringResource(R.string.plugin_state_disabled)
+                )
+                PluginDetailField(
+                    stringResource(R.string.plugin_developer_plugin_author),
+                    manifest?.author.orEmpty().ifBlank { "-" }
+                )
+                PluginDetailField(
+                    stringResource(R.string.plugin_developer_plugin_description),
+                    manifest?.description.orEmpty().ifBlank { "-" }
+                )
+                PluginPermissionSummary(
+                    permissions = manifest?.permissions.orEmpty(),
+                    emptyText = stringResource(R.string.plugin_permissions_none)
+                )
+                PluginDetailField(
+                    stringResource(R.string.plugin_detail_entry),
+                    describePluginEntry(manifest?.entry)
+                )
+                PluginDetailField(stringResource(R.string.plugin_detail_source_url), plugin.state.sourceUrl)
+                PluginDetailField(stringResource(R.string.plugin_detail_install_dir), plugin.state.installDir)
+                PluginDetailField(stringResource(R.string.plugin_detail_manifest_path), plugin.state.manifestPath)
+                PluginDetailField(stringResource(R.string.plugin_detail_sha256), plugin.state.sha256)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.dialog_ok))
+            }
+        }
+    )
+}
+
+@Composable
+private fun PluginDetailField(label: String, value: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium
+        )
+    }
+}
+
+private fun describePluginEntry(entry: PluginEntry?): String {
+    entry ?: return "-"
+    val parts = buildList {
+        entry.script?.takeIf { it.isNotBlank() }?.let { add("script: $it") }
+        entry.page?.let { add("page(${it.type}): ${it.path}") }
+        entry.terminal?.let { add("terminal: ${it.command}") }
+    }
+    return parts.joinToString("\n").ifBlank { "-" }
 }
 
 private fun pluginPermissionLabel(permission: String): Int? {
@@ -841,6 +945,11 @@ private fun CreateDeveloperPluginDialog(
     var version by remember { mutableStateOf("1.0.0") }
     var description by remember { mutableStateOf("") }
     var author by remember { mutableStateOf("") }
+    val selectedPermissions = remember {
+        mutableStateMapOf<String, Boolean>().apply {
+            PluginRuntime.Permission.entries.forEach { put(it.key, false) }
+        }
+    }
 
     val typeLabel = when (type) {
         DeveloperPluginType.WEBVIEW -> stringResource(R.string.plugin_developer_type_webview)
@@ -854,7 +963,10 @@ private fun CreateDeveloperPluginDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.plugin_developer_create_plugin)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text(
                     text = stringResource(R.string.plugin_developer_plugin_type, typeLabel),
                     style = MaterialTheme.typography.bodyMedium
@@ -900,6 +1012,39 @@ private fun CreateDeveloperPluginDialog(
                     onValueChange = { description = it },
                     label = { Text(stringResource(R.string.plugin_developer_plugin_description)) }
                 )
+
+                Text(
+                    text = stringResource(R.string.plugin_developer_plugin_permissions),
+                    style = MaterialTheme.typography.titleSmall
+                )
+                PluginRuntime.Permission.entries.forEach { permission ->
+                    val checked = selectedPermissions[permission.key] == true
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedPermissions[permission.key] = !checked },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Checkbox(
+                            checked = checked,
+                            onCheckedChange = { selectedPermissions[permission.key] = it }
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = pluginPermissionLabel(permission.key)
+                                    ?.let { stringResource(it) }
+                                    ?: permission.key,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = permission.key,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -912,7 +1057,11 @@ private fun CreateDeveloperPluginDialog(
                             name = name,
                             version = version,
                             description = description,
-                            author = author
+                            author = author,
+                            permissions = PluginRuntime.Permission.entries
+                                .mapNotNull { permission ->
+                                    permission.key.takeIf { selectedPermissions[it] == true }
+                                }
                         )
                     )
                 },

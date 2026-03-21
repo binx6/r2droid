@@ -444,6 +444,10 @@ object PluginManager {
             require(pluginId.isNotBlank()) { "invalid plugin id" }
             require(request.name.isNotBlank()) { "plugin name is required" }
             require(request.version.isNotBlank()) { "plugin version is required" }
+            val requestedPermissions = request.permissions
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .distinct()
 
             val config = _developerConfig.value
             require(config.enabled) { "developer mode is disabled" }
@@ -480,7 +484,7 @@ object PluginManager {
                 version = request.version.trim(),
                 description = request.description.trim(),
                 author = request.author.trim(),
-                permissions = emptyList(),
+                permissions = requestedPermissions,
                 entry = entry,
                 ui = PluginUiOptions(),
                 tabs = emptyList(),

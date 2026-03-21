@@ -169,6 +169,9 @@ private fun WebViewPluginPage(
             }
         )
     }
+    val includeCurrentActivity = remember(pluginId) {
+        PluginManager.getPluginPermissions(pluginId).contains(PluginRuntime.Permission.ANDROID_CLASS.key)
+    }
 
     AndroidView(
         modifier = modifier.fillMaxSize(),
@@ -180,7 +183,13 @@ private fun WebViewPluginPage(
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
                         super.onPageFinished(view, url)
-                        view?.evaluateJavascript(PluginRuntime.androidBridgeJavascript("R2PluginHost"), null)
+                        view?.evaluateJavascript(
+                            PluginRuntime.androidBridgeJavascript(
+                                hostObjectName = "R2PluginHost",
+                                includeCurrentActivity = includeCurrentActivity
+                            ),
+                            null
+                        )
                     }
                 }
                 webChromeClient = WebChromeClient()
@@ -718,6 +727,11 @@ private class PluginWebBridge(
     @JavascriptInterface
     fun androidGetLaunchIntentForPackage(packageName: String): String {
         return PluginRuntime.androidGetLaunchIntentForPackagePayload(pluginId, packageName)
+    }
+
+    @JavascriptInterface
+    fun androidGetCurrentActivity(): String {
+        return PluginRuntime.androidGetCurrentActivityPayload(pluginId)
     }
 
     @JavascriptInterface

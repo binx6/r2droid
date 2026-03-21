@@ -419,6 +419,7 @@
     <string name="dialog_jump_error_resolve">Failed to resolve expression</string>
     <string name="dialog_jump_resolving">Resolving...</string>
     <string name="dialog_jump_go">Go</string>
+    <string name="dialog_ok">OK</string>
     <string name="dialog_cancel">Cancel</string>
 
     <string name="dialog_save_update_option">Update existing project</string>
@@ -674,6 +675,7 @@
     <string name="plugin_state_enabled">Enabled</string>
     <string name="plugin_state_disabled">Disabled</string>
     <string name="plugin_permissions_prefix">Permissions: %1$s</string>
+    <string name="plugin_permissions_none">None</string>
     <string name="plugin_permission_file_read">Read plugin data</string>
     <string name="plugin_permission_file_write">Write plugin data</string>
     <string name="plugin_permission_network">Network access</string>
@@ -709,11 +711,17 @@
     <string name="plugin_developer_plugin_version">Version</string>
     <string name="plugin_developer_plugin_author">Author</string>
     <string name="plugin_developer_plugin_description">Description</string>
+    <string name="plugin_developer_plugin_permissions">Permissions</string>
     <string name="plugin_developer_create_confirm">Create</string>
     <string name="plugin_developer_create_cancel">Cancel</string>
     <string name="plugin_incompatible_version_title">Incompatible Plugin Version</string>
     <string name="plugin_incompatible_version_message">Plugin "%1$s" requires r2droid %2$s or later. Current version: %3$s.</string>
     <string name="plugin_incompatible_version_confirm">Got it</string>
+    <string name="plugin_detail_entry">Entry</string>
+    <string name="plugin_detail_source_url">Source URL</string>
+    <string name="plugin_detail_install_dir">Install directory</string>
+    <string name="plugin_detail_manifest_path">Manifest path</string>
+    <string name="plugin_detail_sha256">SHA-256</string>
     <string name="features_custom_start_dialog_title">Custom R2 Command</string>
     <string name="features_custom_start_hint">Full command</string>
     <string name="features_custom_start_examples">e.g. r2 -  or  r2 \"frida://attach/pid\"</string>

@@ -1,5 +1,6 @@
 package top.wsdx233.r2droid.feature.plugin
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import kotlinx.serialization.json.Json
@@ -108,6 +109,10 @@ object PluginAndroidBridge {
         return payloadForValue(pluginId, launchIntent)
     }
 
+    fun getCurrentActivityPayload(pluginId: String, activity: Activity?): String {
+        return payloadForValue(pluginId, activity)
+    }
+
     fun releasePayload(pluginId: String, refId: String): String {
         releaseReference(pluginId, refId)
         return stringPayload("ok")
@@ -121,7 +126,7 @@ object PluginAndroidBridge {
         }.toString()
     }
 
-    fun javascriptBridge(hostObjectName: String): String {
+    fun javascriptBridge(hostObjectName: String, includeCurrentActivity: Boolean = false): String {
         return """
             (function() {
               const __host = $hostObjectName;
@@ -253,11 +258,15 @@ object PluginAndroidBridge {
                 getLaunchIntentForPackage: function(packageName) {
                   return __unwrap(__host.androidGetLaunchIntentForPackage(packageName));
                 },
+                getCurrentActivity: function() {
+                  return __unwrap(__host.androidGetCurrentActivity());
+                },
                 release: function(target) {
                   return __unwrap(__host.androidRelease(__refOf(target)));
                 }
               };
               globalThis.androidBridgeReady = true;
+              ${if (includeCurrentActivity) "globalThis.currentActivity = globalThis.android.getCurrentActivity();" else ""}
 
               if (typeof globalThis.dispatchEvent === 'function' && typeof globalThis.Event === 'function') {
                 try {

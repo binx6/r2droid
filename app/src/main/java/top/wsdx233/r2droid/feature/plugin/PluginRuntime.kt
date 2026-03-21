@@ -1,6 +1,9 @@
 package top.wsdx233.r2droid.feature.plugin
 
+import android.app.Activity
+import android.app.Application
 import android.content.Context
+import android.os.Bundle
 import com.dokar.quickjs.QuickJs
 import com.dokar.quickjs.binding.define
 import com.dokar.quickjs.binding.function
@@ -15,12 +18,14 @@ import top.wsdx233.r2droid.core.data.prefs.SettingsManager
 import top.wsdx233.r2droid.feature.project.data.SavedProjectRepository
 import top.wsdx233.r2droid.util.R2PipeManager
 import java.io.File
+import java.lang.ref.WeakReference
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 object PluginRuntime {
 
@@ -53,11 +58,42 @@ object PluginRuntime {
 
     private val processSessions = ConcurrentHashMap<String, ProcessSession>()
     private val appContextRef = java.util.concurrent.atomic.AtomicReference<Context?>(null)
+    private val currentActivityRef = java.util.concurrent.atomic.AtomicReference<WeakReference<Activity>?>(null)
     private val pendingFilePickers = ConcurrentHashMap<String, CompletableDeferred<String>>()
     private val pendingDirPickers = ConcurrentHashMap<String, CompletableDeferred<String>>()
+    private val activityLifecycleRegistered = AtomicBoolean(false)
 
     fun initialize(context: Context) {
-        appContextRef.set(context.applicationContext)
+        val appContext = context.applicationContext
+        appContextRef.set(appContext)
+        val application = appContext as? Application ?: return
+        if (activityLifecycleRegistered.compareAndSet(false, true)) {
+            application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
+                override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
+
+                override fun onActivityStarted(activity: Activity) {
+                    currentActivityRef.set(WeakReference(activity))
+                }
+
+                override fun onActivityResumed(activity: Activity) {
+                    currentActivityRef.set(WeakReference(activity))
+                }
+
+                override fun onActivityPaused(activity: Activity) {
+                    clearCurrentActivityIfMatch(activity)
+                }
+
+                override fun onActivityStopped(activity: Activity) {
+                    clearCurrentActivityIfMatch(activity)
+                }
+
+                override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
+
+                override fun onActivityDestroyed(activity: Activity) {
+                    clearCurrentActivityIfMatch(activity)
+                }
+            })
+        }
     }
 
     suspend fun runPluginScript(pluginId: String, code: String): Result<String> = withContext(Dispatchers.IO) {
@@ -242,8 +278,8 @@ object PluginRuntime {
         projectsToJson(projects)
     }
 
-    fun androidBridgeJavascript(hostObjectName: String): String {
-        return PluginAndroidBridge.javascriptBridge(hostObjectName)
+    fun androidBridgeJavascript(hostObjectName: String, includeCurrentActivity: Boolean = false): String {
+        return PluginAndroidBridge.javascriptBridge(hostObjectName, includeCurrentActivity)
     }
 
     fun androidImportClassPayload(pluginId: String, className: String): String = runCatching {
@@ -286,6 +322,12 @@ object PluginRuntime {
         val context = createContext(pluginId)
         requirePermission(context, Permission.ANDROID_CLASS)
         PluginAndroidBridge.getLaunchIntentForPackagePayload(getAppContext(), pluginId, packageName)
+    }.getOrElse(PluginAndroidBridge::errorPayload)
+
+    fun androidGetCurrentActivityPayload(pluginId: String): String = runCatching {
+        val context = createContext(pluginId)
+        requirePermission(context, Permission.ANDROID_CLASS)
+        PluginAndroidBridge.getCurrentActivityPayload(pluginId, currentActivityRef.get()?.get())
     }.getOrElse(PluginAndroidBridge::errorPayload)
 
     fun androidReleasePayload(pluginId: String, refId: String): String = runCatching {
@@ -492,6 +534,10 @@ object PluginRuntime {
                     androidGetLaunchIntentForPackagePayload(context.pluginId, packageName)
                 }
 
+                function<String>("androidGetCurrentActivity") { _ ->
+                    androidGetCurrentActivityPayload(context.pluginId)
+                }
+
                 function<String, String>("androidRelease") { refId ->
                     androidReleasePayload(context.pluginId, refId)
                 }
@@ -504,7 +550,14 @@ object PluginRuntime {
                 }
             }
 
-            runBlocking { qjs.evaluate<Any?>(PluginAndroidBridge.javascriptBridge("host")) }
+            runBlocking {
+                qjs.evaluate<Any?>(
+                    PluginAndroidBridge.javascriptBridge(
+                        hostObjectName = "host",
+                        includeCurrentActivity = context.permissions.contains(Permission.ANDROID_CLASS.key)
+                    )
+                )
+            }
 
             val result = runBlocking { qjs.evaluate<Any?>(code) }?.toString().orEmpty()
             val logText = logs.joinToString("\n")
@@ -723,6 +776,13 @@ object PluginRuntime {
 
     private fun getAppContext(): Context {
         return appContextRef.get() ?: error("PluginRuntime not initialized")
+    }
+
+    private fun clearCurrentActivityIfMatch(activity: Activity) {
+        val current = currentActivityRef.get()?.get() ?: return
+        if (current === activity) {
+            currentActivityRef.set(null)
+        }
     }
 
     private fun resolveProjectsRootDir(context: Context): File {

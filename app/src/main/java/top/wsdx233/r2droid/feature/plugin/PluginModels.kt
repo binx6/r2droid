@@ -145,5 +145,6 @@ data class DeveloperPluginCreateRequest(
     val name: String,
     val version: String,
     val description: String,
-    val author: String
+    val author: String,
+    val permissions: List<String> = emptyList()
 )
