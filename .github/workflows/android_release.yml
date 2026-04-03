@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    name: Build Signed APK
+    name: Build Signed APKs
     runs-on: ubuntu-latest
     permissions:
       contents: write # 允许 Action 上传 Release 文件
@@ -34,26 +34,27 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build Release APK
+      - name: Build Release APKs
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          ./gradlew :app:assembleRelease \
+          ./gradlew \
+            :app:assembleFullRelease \
+            :app:assembleProotOnlyRelease \
             -PKEYSTORE_FILE=release-keystore.jks \
             -PKEYSTORE_PASSWORD="$KEYSTORE_PASSWORD" \
             -PKEY_ALIAS="$KEY_ALIAS" \
             -PKEY_PASSWORD="$KEY_PASSWORD"
 
-      - name: List Build Output (Debug)
-        run: find . -name "*.apk"
+      - name: List Build Output
+        run: find app/build/outputs/apk -name "*.apk" -o -name "output-metadata.json"
 
-      - name: Rename APK
+      - name: Rename APKs
         run: |
-          # 1. 找到构建生成的原始 APK (注意路径变更)
-          # 2. 将其移动到根目录并重命名，方便后续步骤读取
-          mv app/build/outputs/apk/release/app-release.apk R2Droid-${{ github.ref_name }}.apk
+          cp app/build/outputs/apk/full/release/app-full-release.apk R2Droid-${{ github.ref_name }}.apk
+          cp app/build/outputs/apk/prootOnly/release/app-prootOnly-release.apk R2Droid-Proot-${{ github.ref_name }}.apk
 
       - name: Build Changelog
         id: build_changelog
@@ -70,7 +71,7 @@ jobs:
         with:
           body: ${{ steps.build_changelog.outputs.changelog }}
           files: |
-            # 注意：这里只需要文件名了，因为上一步我们把它移动到了根目录
             R2Droid-${{ github.ref_name }}.apk
+            R2Droid-Proot-${{ github.ref_name }}.apk
           draft: false
           prerelease: false
