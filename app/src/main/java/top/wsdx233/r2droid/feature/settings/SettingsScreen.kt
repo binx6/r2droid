@@ -72,6 +72,7 @@ import top.wsdx233.r2droid.service.KeepAliveService
 import top.wsdx233.r2droid.util.AppCacheCleaner
 import top.wsdx233.r2droid.util.DocumentsUiOpenDocumentTreeContract
 import top.wsdx233.r2droid.util.ProotInstaller
+import top.wsdx233.r2droid.util.ProotRootfsCatalog
 import top.wsdx233.r2droid.util.UpdateManager
 import java.io.File
 
@@ -180,6 +181,9 @@ class SettingsViewModel : ViewModel() {
 
     private val _prootCustomCommand = MutableStateFlow(SettingsManager.prootCustomCommand)
     val prootCustomCommand = _prootCustomCommand.asStateFlow()
+
+    private val _prootRootfsAlias = MutableStateFlow(SettingsManager.prootRootfsAlias)
+    val prootRootfsAlias = _prootRootfsAlias.asStateFlow()
 
     private val _httpPort = MutableStateFlow(SettingsManager.httpPort)
     val httpPort = _httpPort.asStateFlow()
@@ -344,6 +348,11 @@ class SettingsViewModel : ViewModel() {
         _prootCustomCommand.value = value
     }
 
+    fun setProotRootfsAlias(value: String) {
+        SettingsManager.prootRootfsAlias = value
+        _prootRootfsAlias.value = value
+    }
+
     fun setHttpPort(value: Int) {
         SettingsManager.httpPort = value
         _httpPort.value = value
@@ -416,6 +425,7 @@ class SettingsViewModel : ViewModel() {
         SettingsManager.useProotMode = false
         SettingsManager.prootBuildMode = "auto"
         SettingsManager.prootCustomCommand = ""
+        SettingsManager.prootRootfsAlias = "ubuntu"
         SettingsManager.httpPort = 9090
         SettingsManager.defaultJumpTarget = "ask"
         _fontPath.value = null
@@ -436,6 +446,7 @@ class SettingsViewModel : ViewModel() {
         _useProotMode.value = false
         _prootBuildMode.value = "auto"
         _prootCustomCommand.value = ""
+        _prootRootfsAlias.value = "ubuntu"
         _httpPort.value = 9090
         _defaultJumpTarget.value = "ask"
         loadPersistedTreeAccess(context)
@@ -468,6 +479,7 @@ fun SettingsScreen(
     val useProotMode by viewModel.useProotMode.collectAsState()
     val prootBuildMode by viewModel.prootBuildMode.collectAsState()
     val prootCustomCommand by viewModel.prootCustomCommand.collectAsState()
+    val prootRootfsAlias by viewModel.prootRootfsAlias.collectAsState()
     val httpPort by viewModel.httpPort.collectAsState()
     val defaultJumpTarget by viewModel.defaultJumpTarget.collectAsState()
 
@@ -475,6 +487,12 @@ fun SettingsScreen(
     val coroutineScope = rememberCoroutineScope()
     val prootInstallState by ProotInstaller.state.collectAsState()
     val prootToggleChecked = useProotMode || prootInstallState.isWorking
+    val prootRootfsOptions = remember(context) { ProotRootfsCatalog.load(context) }
+    val selectedProotRootfs = remember(prootRootfsAlias, prootRootfsOptions) {
+        prootRootfsOptions.firstOrNull { it.alias == prootRootfsAlias }
+            ?: prootRootfsOptions.firstOrNull()
+            ?: ProotRootfsCatalog.defaultOption()
+    }
     
     LaunchedEffect(useProotMode) {
         viewModel.loadR2rcContent(context)
@@ -483,6 +501,7 @@ fun SettingsScreen(
     LaunchedEffect(Unit) {
         viewModel.loadPersistedTreeAccess(context)
     }
+
     
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showR2rcDialog by remember { mutableStateOf(false) }
@@ -501,9 +520,15 @@ fun SettingsScreen(
     var tempHttpPort by remember { mutableStateOf("") }
     var showDefaultJumpTargetDialog by remember { mutableStateOf(false) }
     var showProotBuildModeDialog by remember { mutableStateOf(false) }
+    var showProotRootfsDialog by remember { mutableStateOf(false) }
     var showProotCustomCommandDialog by remember { mutableStateOf(false) }
     var tempProotCustomCommand by remember { mutableStateOf("") }
+    var tempProotRootfsAlias by remember { mutableStateOf(prootRootfsAlias) }
     var pendingProotBuildMode by remember { mutableStateOf("auto") }
+
+    LaunchedEffect(prootRootfsAlias) {
+        tempProotRootfsAlias = prootRootfsAlias
+    }
     var showProotReinstallDialog by remember { mutableStateOf(false) }
     var pendingNewProjectHome by remember { mutableStateOf<String?>(null) }
     var oldProjectHome by remember { mutableStateOf<String?>(null) }
@@ -741,6 +766,26 @@ fun SettingsScreen(
                         icon = Icons.Default.Settings,
                         onClick = { showProotBuildModeDialog = true }
                     )
+                }
+
+                if (prootBuildMode == "manual") {
+                    item {
+                        SettingsItem(
+                            title = stringResource(R.string.proot_rootfs_title),
+                            subtitle = buildString {
+                                append(selectedProotRootfs.displayName)
+                                if (selectedProotRootfs.comment.isNotBlank()) {
+                                    append(" · ")
+                                    append(selectedProotRootfs.comment)
+                                }
+                            },
+                            icon = Icons.Default.Folder,
+                            onClick = {
+                                tempProotRootfsAlias = selectedProotRootfs.alias
+                                showProotRootfsDialog = true
+                            }
+                        )
+                    }
                 }
 
                 if (prootBuildMode == "custom") {
@@ -1375,15 +1420,9 @@ fun SettingsScreen(
                             .clickable {
                                 pendingProotBuildMode = "manual"
                                 viewModel.setProotBuildMode("manual")
+                                tempProotRootfsAlias = prootRootfsAlias
                                 showProotBuildModeDialog = false
-                                coroutineScope.launch {
-                                    if (ProotInstaller.isEnvironmentReady(context)) {
-                                        viewModel.setUseProotMode(true)
-                                    } else {
-                                        val result = ProotInstaller.installManual(context)
-                                        viewModel.setUseProotMode(result.isSuccess)
-                                    }
-                                }
+                                showProotRootfsDialog = true
                             }
                             .padding(vertical = 8.dp, horizontal = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -1439,6 +1478,77 @@ fun SettingsScreen(
         )
     }
 
+    if (showProotRootfsDialog) {
+        AlertDialog(
+            onDismissRequest = { showProotRootfsDialog = false },
+            title = { Text(stringResource(R.string.proot_rootfs_title)) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = stringResource(R.string.proot_rootfs_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    prootRootfsOptions.forEach { option ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { tempProotRootfsAlias = option.alias }
+                                .padding(vertical = 8.dp, horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = tempProotRootfsAlias == option.alias,
+                                onClick = null
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(option.displayName)
+                                val rootfsSubtitle = buildString {
+                                    append(option.alias)
+                                    if (option.comment.isNotBlank()) {
+                                        append(" · ")
+                                        append(option.comment)
+                                    }
+                                }
+                                Text(
+                                    text = rootfsSubtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val selectedAlias = tempProotRootfsAlias.ifBlank { prootRootfsAlias }
+                    viewModel.setProotRootfsAlias(selectedAlias)
+                    showProotRootfsDialog = false
+                    coroutineScope.launch {
+                        val result = ProotInstaller.installManual(
+                            context,
+                            rootfsAlias = selectedAlias
+                        )
+                        viewModel.setUseProotMode(result.isSuccess)
+                    }
+                }) {
+                    Text(stringResource(R.string.proot_rootfs_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showProotRootfsDialog = false }) {
+                    Text(stringResource(R.string.settings_cancel))
+                }
+            }
+        )
+    }
+
     if (showProotCustomCommandDialog) {
         AlertDialog(
             onDismissRequest = { showProotCustomCommandDialog = false },
@@ -1481,7 +1591,11 @@ fun SettingsScreen(
                     showProotReinstallDialog = false
                     coroutineScope.launch {
                         if (prootBuildMode == "manual") {
-                            ProotInstaller.installManual(context, forceReinstall = true)
+                            ProotInstaller.installManual(
+                                context,
+                                rootfsAlias = prootRootfsAlias,
+                                forceReinstall = true
+                            )
                         } else {
                             ProotInstaller.install(context, forceReinstall = true)
                         }

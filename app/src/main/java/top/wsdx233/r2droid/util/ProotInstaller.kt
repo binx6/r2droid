@@ -12,6 +12,7 @@ import kotlinx.coroutines.withContext
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
+import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
@@ -53,8 +54,6 @@ data class ProotInstallState(
 object ProotInstaller {
     private const val TAG = "ProotInstaller"
     private const val PROOT_ASSET_NAME = "proot"
-    private const val ROOTFS_URL = "https://cdimage.ubuntu.com/ubuntu-base/releases/noble/release/ubuntu-base-24.04.3-base-arm64.tar.gz"
-    private const val ROOTFS_ARCHIVE_NAME = "ubuntu-base-24.04.3-base-arm64.tar.gz"
     private const val READY_MARKER_NAME = ".setup-complete"
     private const val MAX_LOG_LINES = 160
 
@@ -77,8 +76,25 @@ object ProotInstaller {
 
     fun getR2rcFile(context: Context): File = File(getRootfsDir(context), "root/.radare2rc")
 
+    fun getInstalledRootfsAlias(context: Context): String? = readReadyMetadata(context)["alias"]
+
     fun isEnvironmentReady(context: Context): Boolean {
         return getProotBinary(context).exists() && getReadyMarker(context).exists() && getRootfsDir(context).isDirectory
+    }
+
+    fun isR2FridaInstalled(context: Context): Boolean {
+        val rootfsDir = getRootfsDir(context)
+        if (!rootfsDir.isDirectory) return false
+        val pluginCandidates = listOf(
+            File(rootfsDir, "root/.local/share/radare2/plugins"),
+            File(rootfsDir, "usr/local/lib/radare2"),
+            File(rootfsDir, "usr/local/share/radare2/plugins")
+        )
+        return pluginCandidates.any { dir ->
+            dir.exists() && dir.walkTopDown().maxDepth(3).any { file ->
+                file.isFile && file.name.startsWith("io_frida") && (file.extension == "so" || file.extension == "dylib" || file.extension == "dll")
+            }
+        }
     }
 
     fun resetState() {
@@ -109,13 +125,45 @@ object ProotInstaller {
         Os.chmod(target.absolutePath, 493)
     }
 
+    private fun readReadyMetadata(context: Context): Map<String, String> {
+        val marker = getReadyMarker(context)
+        if (!marker.exists()) return emptyMap()
+        return marker.readLines()
+            .mapNotNull { line ->
+                val idx = line.indexOf('=')
+                if (idx <= 0) null else line.substring(0, idx) to line.substring(idx + 1)
+            }
+            .toMap()
+    }
+
+    private fun writeReadyMetadata(context: Context, option: ProotRootfsOption, mode: String) {
+        getReadyMarker(context).apply {
+            parentFile?.mkdirs()
+            writeText(
+                buildString {
+                    appendLine("alias=${option.alias}")
+                    appendLine("url=${option.tarballUrl}")
+                    appendLine("mode=$mode")
+                    appendLine("strip=${option.tarballStripOpt}")
+                    option.sha256?.let { appendLine("sha256=$it") }
+                }
+            )
+        }
+    }
+
+    private fun resolveAutoRootfsOption(context: Context): ProotRootfsOption {
+        return ProotRootfsCatalog.resolve(context, "ubuntu")
+    }
+
     suspend fun install(context: Context, forceReinstall: Boolean = false): Result<Unit> {
         val appContext = context.applicationContext
+        val rootfsOption = resolveAutoRootfsOption(appContext)
         return installMutex.withLock {
             withContext(Dispatchers.IO) {
                 runCatching {
                     _state.value = ProotInstallState()
-                    if (!forceReinstall && isEnvironmentReady(appContext)) {
+                    val installedAlias = getInstalledRootfsAlias(appContext)
+                    if (!forceReinstall && isEnvironmentReady(appContext) && installedAlias == rootfsOption.alias) {
                         _state.value = ProotInstallState(
                             status = ProotInstallState.Status.DONE,
                             progress = 1f,
@@ -125,23 +173,20 @@ object ProotInstaller {
                     }
 
                     ensureRuntimeBinary(appContext)
-                    prepareRuntime(appContext, forceReinstall)
-                    downloadRootfsIfNeeded(appContext)
-                    extractRootfsIfNeeded(appContext)
+                    prepareRuntime(appContext, forceReinstall || (installedAlias != null && installedAlias != rootfsOption.alias))
+                    downloadRootfsIfNeeded(appContext, rootfsOption)
+                    extractRootfsIfNeeded(appContext, rootfsOption)
                     configureRootfs(appContext)
                     installPackages(appContext)
                     installPlugins(appContext)
                     syncR2rc(appContext)
-                    getReadyMarker(appContext).apply {
-                        parentFile?.mkdirs()
-                        writeText("url=$ROOTFS_URL\n")
-                    }
+                    writeReadyMetadata(appContext, rootfsOption, mode = "auto")
                     _state.value = _state.value.copy(
                         status = ProotInstallState.Status.DONE,
                         progress = 1f,
                         message = "Proot environment is ready."
                     )
-                    appendLog("Environment setup completed.")
+                    appendLog("Environment setup completed (${rootfsOption.displayName}).")
                 }.onFailure { error ->
                     Log.e(TAG, "Failed to install proot environment", error)
                     appendLog("ERROR: ${error.message ?: "unknown error"}")
@@ -154,13 +199,19 @@ object ProotInstaller {
         }
     }
 
-    suspend fun installManual(context: Context, forceReinstall: Boolean = false): Result<Unit> {
+    suspend fun installManual(
+        context: Context,
+        rootfsAlias: String = "ubuntu",
+        forceReinstall: Boolean = false
+    ): Result<Unit> {
         val appContext = context.applicationContext
+        val rootfsOption = ProotRootfsCatalog.resolve(appContext, rootfsAlias)
         return installMutex.withLock {
             withContext(Dispatchers.IO) {
                 runCatching {
                     _state.value = ProotInstallState()
-                    if (!forceReinstall && isEnvironmentReady(appContext)) {
+                    val installedAlias = getInstalledRootfsAlias(appContext)
+                    if (!forceReinstall && isEnvironmentReady(appContext) && installedAlias == rootfsOption.alias) {
                         _state.value = ProotInstallState(
                             status = ProotInstallState.Status.DONE,
                             progress = 1f,
@@ -170,20 +221,17 @@ object ProotInstaller {
                     }
 
                     ensureRuntimeBinary(appContext)
-                    prepareRuntime(appContext, forceReinstall)
-                    downloadRootfsIfNeeded(appContext)
-                    extractRootfsIfNeeded(appContext)
+                    prepareRuntime(appContext, forceReinstall || (installedAlias != null && installedAlias != rootfsOption.alias))
+                    downloadRootfsIfNeeded(appContext, rootfsOption)
+                    extractRootfsIfNeeded(appContext, rootfsOption)
                     configureRootfs(appContext)
-                    getReadyMarker(appContext).apply {
-                        parentFile?.mkdirs()
-                        writeText("url=$ROOTFS_URL\nmode=manual\n")
-                    }
+                    writeReadyMetadata(appContext, rootfsOption, mode = "manual")
                     _state.value = _state.value.copy(
                         status = ProotInstallState.Status.DONE,
                         progress = 1f,
-                        message = "Proot Ubuntu environment is ready. Please configure r2 and plugins manually via the proot terminal."
+                        message = "${rootfsOption.displayName} proot environment is ready. Please configure r2 and plugins manually via the proot terminal."
                     )
-                    appendLog("Manual mode: Ubuntu proot setup completed. Use the proot terminal to install r2 and plugins.")
+                    appendLog("Manual mode: ${rootfsOption.displayName} proot setup completed. Use the proot terminal to install r2 and plugins.")
                 }.onFailure { error ->
                     Log.e(TAG, "Failed to install proot environment (manual)", error)
                     appendLog("ERROR: ${error.message ?: "unknown error"}")
@@ -212,17 +260,17 @@ object ProotInstaller {
         }
     }
 
-    private fun downloadRootfsIfNeeded(context: Context) {
-        val archive = getArchiveFile(context)
+    private fun downloadRootfsIfNeeded(context: Context, option: ProotRootfsOption) {
+        val archive = getArchiveFile(context, option)
         if (archive.exists() && archive.length() > 0L) {
             appendLog("Using cached rootfs archive: ${archive.absolutePath}")
             return
         }
 
-        updateState(ProotInstallState.Status.DOWNLOADING, 0.1f, "Downloading Ubuntu base rootfs...")
-        appendLog("Downloading $ROOTFS_URL")
+        updateState(ProotInstallState.Status.DOWNLOADING, 0.1f, "Downloading ${option.displayName} rootfs...")
+        appendLog("Downloading ${option.tarballUrl}")
 
-        val conn = java.net.URL(ROOTFS_URL).openConnection() as java.net.HttpURLConnection
+        val conn = java.net.URL(option.tarballUrl).openConnection() as java.net.HttpURLConnection
         conn.connectTimeout = 15_000
         conn.readTimeout = 60_000
         conn.instanceFollowRedirects = true
@@ -253,7 +301,7 @@ object ProotInstaller {
                             updateState(
                                 ProotInstallState.Status.DOWNLOADING,
                                 stageProgress.coerceAtMost(0.35f),
-                                "Downloading Ubuntu base rootfs..."
+                                "Downloading ${option.displayName} rootfs..."
                             )
                         }
                     }
@@ -264,20 +312,21 @@ object ProotInstaller {
         appendLog("Download finished (${archive.length()} bytes).")
     }
 
-    private fun extractRootfsIfNeeded(context: Context) {
+    private fun extractRootfsIfNeeded(context: Context, option: ProotRootfsOption) {
         val rootfsDir = getRootfsDir(context)
         val readyMarker = getReadyMarker(context)
-        if (readyMarker.exists() && rootfsDir.resolve("bin/bash").exists()) {
+        val installedAlias = readReadyMetadata(context)["alias"]
+        if (readyMarker.exists() && installedAlias == option.alias && rootfsDir.resolve("bin").exists()) {
             appendLog("Existing rootfs looks ready, skipping extraction.")
             return
         }
 
-        val archive = getArchiveFile(context)
+        val archive = getArchiveFile(context, option)
         if (!archive.exists()) {
             throw IllegalStateException("Rootfs archive is missing.")
         }
 
-        updateState(ProotInstallState.Status.EXTRACTING, 0.38f, "Extracting Ubuntu base rootfs...")
+        updateState(ProotInstallState.Status.EXTRACTING, 0.38f, "Extracting ${option.displayName} rootfs...")
         appendLog("Extracting rootfs to ${rootfsDir.absolutePath}")
 
         rootfsDir.deleteRecursively()
@@ -310,25 +359,26 @@ object ProotInstaller {
                             updateState(
                                 ProotInstallState.Status.EXTRACTING,
                                 stageProgress.coerceAtMost(0.6f),
-                                "Extracting Ubuntu base rootfs..."
+                                "Extracting ${option.displayName} rootfs..."
                             )
                         }
                     }
                 }
             }
 
-            TarArchiveInputStream(GzipCompressorInputStream(countingInput)).use { tarInput ->
+            createTarInputStream(archive, countingInput).use { tarInput ->
                 var entry: TarArchiveEntry?
                 while (tarInput.nextEntry.also { entry = it } != null) {
                     val currentEntry = entry ?: continue
-                    val outputFile = File(rootfsDir, currentEntry.name)
+                    val normalizedEntryName = stripArchivePath(currentEntry.name, option.tarballStripOpt) ?: continue
+                    val outputFile = File(rootfsDir, normalizedEntryName)
                     if (!outputFile.canonicalPath.startsWith(rootfsDir.canonicalPath)) {
                         throw SecurityException("Invalid archive entry: ${currentEntry.name}")
                     }
                     when {
                         currentEntry.isDirectory -> outputFile.mkdirs()
                         currentEntry.isSymbolicLink -> handleSymlink(outputFile, currentEntry.linkName)
-                        currentEntry.isLink -> handleHardLink(rootfsDir, outputFile, currentEntry.linkName)
+                        currentEntry.isLink -> handleHardLink(rootfsDir, outputFile, stripLinkTarget(currentEntry.linkName, option.tarballStripOpt))
                         currentEntry.isFile -> handleRegularFile(tarInput, outputFile)
                         else -> appendLog("Skipping unsupported tar entry: ${currentEntry.name}")
                     }
@@ -342,7 +392,7 @@ object ProotInstaller {
     }
 
     private fun configureRootfs(context: Context) {
-        updateState(ProotInstallState.Status.CONFIGURING, 0.64f, "Configuring Ubuntu environment...")
+        updateState(ProotInstallState.Status.CONFIGURING, 0.64f, "Configuring proot environment...")
         val rootfsDir = getRootfsDir(context)
         val dnsServers = queryDnsServers().ifEmpty { listOf("1.1.1.1", "8.8.8.8") }
         val resolvConf = File(rootfsDir, "etc/resolv.conf")
@@ -407,6 +457,7 @@ object ProotInstaller {
                     ninja-build \
                     patch \
                     pkg-config \
+                    pkgconf \
                     python3 \
                     python3-pip \
                     unzip \
@@ -437,6 +488,7 @@ object ProotInstaller {
                 command -v r2pm >/dev/null
                 r2 -v
                 r2pm -h >/dev/null
+                r2pm -U
                 ldconfig || true
                 ls -l /usr/local/lib/pkgconfig/r_core.pc || true
             """.trimIndent())
@@ -450,37 +502,30 @@ object ProotInstaller {
 
     private fun installPlugins(context: Context) {
         val pluginCommands = listOf(
-            Triple(0.9f, "Installing r2dec with r2pm...", """
-                set -e
-                export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-                export LD_LIBRARY_PATH=/usr/local/lib:/usr/lib:/usr/lib/aarch64-linux-gnu:${'$'}{LD_LIBRARY_PATH:-}
-                export LIBRARY_PATH=/usr/local/lib:/usr/lib:/usr/lib/aarch64-linux-gnu:${'$'}{LIBRARY_PATH:-}
-                export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib/pkgconfig:/usr/lib/aarch64-linux-gnu/pkgconfig:${'$'}{PKG_CONFIG_PATH:-}
-                R2PM_BIN=/usr/local/bin/r2pm
-                [ -x "${'$'}R2PM_BIN" ] || R2PM_BIN="$(command -v r2pm)"
-                bash "${'$'}R2PM_BIN" init || true
-                bash "${'$'}R2PM_BIN" update || true
-                bash "${'$'}R2PM_BIN" -ci r2dec
-            """.trimIndent()),
-            Triple(0.97f, "Installing r2ghidra with r2pm...", """
-                set -e
-                export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-                export LD_LIBRARY_PATH=/usr/local/lib:/usr/lib:/usr/lib/aarch64-linux-gnu:${'$'}{LD_LIBRARY_PATH:-}
-                export LIBRARY_PATH=/usr/local/lib:/usr/lib:/usr/lib/aarch64-linux-gnu:${'$'}{LIBRARY_PATH:-}
-                export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib/pkgconfig:/usr/lib/aarch64-linux-gnu/pkgconfig:${'$'}{PKG_CONFIG_PATH:-}
-                R2PM_BIN=/usr/local/bin/r2pm
-                [ -x "${'$'}R2PM_BIN" ] || R2PM_BIN="$(command -v r2pm)"
-                bash "${'$'}R2PM_BIN" init || true
-                bash "${'$'}R2PM_BIN" update || true
-                bash "${'$'}R2PM_BIN" -ci r2ghidra
-            """.trimIndent())
+            Triple(0.9f, "Installing r2dec with r2pm...", "r2dec"),
+            Triple(0.95f, "Installing r2ghidra with r2pm...", "r2ghidra"),
+            Triple(0.99f, "Installing r2frida with r2pm...", "r2frida")
         )
 
-        pluginCommands.forEach { (progress, message, command) ->
+        pluginCommands.forEach { (progress, message, pluginName) ->
             updateState(ProotInstallState.Status.INSTALLING_PLUGINS, progress, message)
-            runProotCommand(context, command)
+            runProotCommand(context, buildR2pmInstallScript(pluginName))
         }
     }
+
+    private fun buildR2pmInstallScript(pluginName: String): String = """
+        set -e
+        export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+        export LD_LIBRARY_PATH=/usr/local/lib:/usr/lib:/usr/lib/aarch64-linux-gnu:${'$'}{LD_LIBRARY_PATH:-}
+        export LIBRARY_PATH=/usr/local/lib:/usr/lib:/usr/lib/aarch64-linux-gnu:${'$'}{LIBRARY_PATH:-}
+        export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib/pkgconfig:/usr/lib/aarch64-linux-gnu/pkgconfig:${'$'}{PKG_CONFIG_PATH:-}
+        R2PM_BIN="$(command -v r2pm || true)"
+        [ -n "${'$'}R2PM_BIN" ] || R2PM_BIN=/usr/local/bin/r2pm
+        [ -x "${'$'}R2PM_BIN" ] || { echo "r2pm not found"; exit 127; }
+        "${'$'}R2PM_BIN" -U
+        hash -r
+        "${'$'}R2PM_BIN" -ci $pluginName
+    """.trimIndent()
 
     private fun syncR2rc(context: Context) {
         val target = getR2rcFile(context)
@@ -507,10 +552,9 @@ object ProotInstaller {
         appendLog("Wrote default proot .radare2rc")
     }
 
-    private fun runProotCommand(context: Context, script: String) {
-        appendLog("$ ${script.lineSequence().firstOrNull() ?: "command"}")
+    fun runProotCommand(context: Context, script: String, logger: ((String) -> Unit)? = ::appendLog): String {
+        logger?.invoke("$ ${script.lineSequence().firstOrNull() ?: "command"}")
 
-        // Prepend cd /root to avoid getcwd errors inside proot
         val wrappedScript = "cd /root 2>/dev/null; $script"
 
         val spec = R2Runtime.buildProotShellSpec(
@@ -524,11 +568,13 @@ object ProotInstaller {
         processBuilder.environment().putAll(spec.environment)
         processBuilder.redirectErrorStream(true)
 
+        val output = StringBuilder()
         val process = processBuilder.start()
         process.inputStream.bufferedReader().useLines { lines ->
             lines.forEach { line ->
                 if (line.isNotBlank()) {
-                    appendLog(line)
+                    output.appendLine(line)
+                    logger?.invoke(line)
                 }
             }
         }
@@ -537,6 +583,7 @@ object ProotInstaller {
         if (exitCode != 0) {
             throw IllegalStateException("Command failed with exit code $exitCode")
         }
+        return output.toString()
     }
 
     private fun queryDnsServers(): List<String> {
@@ -574,7 +621,35 @@ object ProotInstaller {
         _state.value = _state.value.copy(logs = logs)
     }
 
-    private fun getArchiveFile(context: Context): File = File(context.cacheDir, "proot/$ROOTFS_ARCHIVE_NAME")
+    private fun getArchiveFile(context: Context, option: ProotRootfsOption): File {
+        val safeName = option.archiveFileName.ifBlank { "${option.alias}.tar" }
+        return File(context.cacheDir, "proot/$safeName")
+    }
+
+    private fun createTarInputStream(archive: File, countingInput: InputStream): TarArchiveInputStream {
+        val lowerName = archive.name.lowercase()
+        val archiveInput = when {
+            lowerName.endsWith(".tar.gz") || lowerName.endsWith(".tgz") -> GzipCompressorInputStream(countingInput)
+            lowerName.endsWith(".tar.xz") || lowerName.endsWith(".txz") -> XZCompressorInputStream(countingInput)
+            lowerName.endsWith(".tar") -> countingInput
+            else -> throw IllegalStateException("Unsupported rootfs archive format: ${archive.name}")
+        }
+        return TarArchiveInputStream(archiveInput)
+    }
+
+    private fun stripArchivePath(path: String, stripComponents: Int): String? {
+        val normalized = path.trim('/').removePrefix("./")
+        if (normalized.isBlank()) return null
+        if (stripComponents <= 0) return normalized
+        val parts = normalized.split('/').filter { it.isNotBlank() }
+        if (parts.size <= stripComponents) return null
+        return parts.drop(stripComponents).joinToString("/")
+    }
+
+    private fun stripLinkTarget(targetPath: String, stripComponents: Int): String {
+        if (targetPath.startsWith("/")) return targetPath
+        return stripArchivePath(targetPath, stripComponents) ?: targetPath
+    }
 
     private fun handleSymlink(linkFile: File, targetPath: String) {
         linkFile.parentFile?.mkdirs()

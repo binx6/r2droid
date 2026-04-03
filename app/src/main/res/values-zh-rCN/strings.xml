@@ -784,6 +784,8 @@
     <string name="r2frida_install_fetching">获取版本信息…</string>
     <string name="r2frida_install_downloading">下载插件中…</string>
     <string name="r2frida_install_extracting">解压文件中…</string>
+    <string name="r2frida_installing_in_proot">正在 proot 中安装 r2frida…</string>
+    <string name="r2frida_install_proot_desc">当前已启用 Proot 模式。r2frida 将通过 r2pm 安装到 proot 环境中，而不是下载 Android 插件包。</string>
     <string name="r2frida_install_done">安装完成</string>
     <string name="r2frida_install_continue">继续</string>
     <string name="r2frida_install_switch_hint">可尝试切换下方的下载源后重试</string>
@@ -826,6 +828,9 @@
     <string name="proot_custom_command">自定义 proot 命令</string>
     <string name="proot_custom_command_desc">输入完整的 proot 启动命令</string>
     <string name="proot_custom_command_hint">例如 /data/data/…/proot -r /path/to/rootfs …</string>
+    <string name="proot_rootfs_title">手动模式 rootfs</string>
+    <string name="proot_rootfs_desc">选择手动模式要使用的 proot-distro rootfs。系统只会下载并解压所选 rootfs，容器内的 radare2 仍需你自行安装。</string>
+    <string name="proot_rootfs_confirm">安装所选 rootfs</string>
     <string name="proot_open_terminal">打开 Proot 终端</string>
     <string name="proot_open_terminal_desc">在 proot 环境中打开终端会话</string>
     <string name="proot_build_mode_label">构建模式：%s</string>

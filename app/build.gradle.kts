@@ -107,6 +107,7 @@ dependencies {
 
     // Source: https://mvnrepository.com/artifact/org.apache.commons/commons-compress
     implementation(libs.commons.compress)
+    implementation(libs.xz)
     implementation(libs.kotlinx.coroutines.android)
     implementation(project(":terminal-view"))
     implementation(project(":terminal-emulator"))

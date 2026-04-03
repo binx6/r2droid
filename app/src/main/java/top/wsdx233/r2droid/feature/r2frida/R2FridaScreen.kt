@@ -92,7 +92,7 @@ import top.wsdx233.r2droid.R
 import top.wsdx233.r2droid.core.data.prefs.SettingsManager
 import top.wsdx233.r2droid.util.R2FridaInstallState
 import top.wsdx233.r2droid.util.R2FridaInstaller
-import java.io.File
+import top.wsdx233.r2droid.util.R2Runtime
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -130,11 +130,13 @@ private fun R2FridaInstallScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val useProotInstall = SettingsManager.useProotMode
     var useChinaSource by remember { mutableStateOf(SettingsManager.language == "zh") }
     val isWorking = installState.status in listOf(
         R2FridaInstallState.Status.FETCHING,
         R2FridaInstallState.Status.DOWNLOADING,
-        R2FridaInstallState.Status.EXTRACTING
+        R2FridaInstallState.Status.EXTRACTING,
+        R2FridaInstallState.Status.INSTALLING
     )
 
     Scaffold(
@@ -220,6 +222,14 @@ private fun R2FridaInstallScreen(
                             icon = Icons.Default.FolderZip,
                             text = stringResource(R.string.r2frida_install_extracting),
                             showProgress = true
+                        )
+                    }
+                    R2FridaInstallState.Status.INSTALLING -> {
+                        StatusCard(
+                            icon = Icons.Default.Settings,
+                            text = installState.message.ifBlank { stringResource(R.string.r2frida_installing_in_proot) },
+                            progress = installState.progress.takeIf { it > 0f },
+                            showProgress = installState.progress <= 0f
                         )
                     }
                     R2FridaInstallState.Status.DONE -> {
@@ -334,21 +344,30 @@ private fun R2FridaInstallScreen(
                     }
                 }
 
-                // Clickable source toggle
-                TextButton(
-                    onClick = { useChinaSource = !useChinaSource },
-                    enabled = !isWorking,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.SwapHoriz, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
+                if (useProotInstall) {
                     Text(
-                        stringResource(
-                            if (useChinaSource) R.string.r2frida_source_gitee
-                            else R.string.r2frida_source_github
-                        ),
-                        style = MaterialTheme.typography.bodySmall
+                        text = stringResource(R.string.r2frida_install_proot_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center
                     )
+                } else {
+                    TextButton(
+                        onClick = { useChinaSource = !useChinaSource },
+                        enabled = !isWorking,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.SwapHoriz, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            stringResource(
+                                if (useChinaSource) R.string.r2frida_source_gitee
+                                else R.string.r2frida_source_github
+                            ),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             }
         }
@@ -417,25 +436,11 @@ private fun buildFridaConnectCommand(
 private suspend fun fetchFridaProcesses(context: android.content.Context, host: String, port: String): Result<List<FridaProcess>> {
     return withContext(Dispatchers.IO) {
         try {
-            val workDir = File(context.filesDir, "radare2/bin")
-            val r2Binary = File(workDir, "r2").absolutePath
             val uri = "frida://attach/remote/$host:$port/"
-
-            val envMap = mutableMapOf<String, String>()
-            val myLd = "${File(context.filesDir, "radare2/lib")}:${File(context.filesDir, "libs")}"
-            val existingLd = System.getenv("LD_LIBRARY_PATH")
-            envMap["LD_LIBRARY_PATH"] = "$myLd${if (existingLd != null) ":$existingLd" else ""}"
-            envMap["XDG_DATA_HOME"] = File(context.filesDir, "r2work").absolutePath
-            envMap["XDG_CACHE_HOME"] = File(context.filesDir, ".cache").absolutePath
-            envMap["HOME"] = workDir.absolutePath
-            envMap["TERM"] = "dumb"
-            envMap["R2_NOCOLOR"] = "1"
-            val systemPath = System.getenv("PATH") ?: "/system/bin:/system/xbin"
-            envMap["PATH"] = "${workDir.absolutePath}:$systemPath"
-
-            val pb = ProcessBuilder("/system/bin/sh", "-c", "$r2Binary \"$uri\"")
-            pb.directory(workDir)
-            pb.environment().putAll(envMap)
+            val launchSpec = R2Runtime.buildStdioLaunch(context, filePath = null, flags = "", rawArgs = uri)
+            val pb = ProcessBuilder(launchSpec.command)
+            pb.directory(launchSpec.workingDirectory)
+            pb.environment().putAll(launchSpec.environment)
             pb.redirectErrorStream(true)
             val proc = pb.start()
             val output = proc.inputStream.bufferedReader().readText()
@@ -735,8 +740,10 @@ private fun R2FridaFeatureScreen(onBack: () -> Unit, onConnect: (String) -> Unit
             confirmButton = {
                 TextButton(onClick = {
                     showReinstallConfirm = false
-                    val pluginsDir = R2FridaInstaller.getPluginsDir(context)
-                    pluginsDir.listFiles()?.filter { it.name.startsWith("io_frida") }?.forEach { it.delete() }
+                    if (!SettingsManager.useProotMode) {
+                        val pluginsDir = R2FridaInstaller.getPluginsDir(context)
+                        pluginsDir.listFiles()?.filter { it.name.startsWith("io_frida") }?.forEach { it.delete() }
+                    }
                     onReinstall()
                 }) { Text(stringResource(R.string.common_yes)) }
             },

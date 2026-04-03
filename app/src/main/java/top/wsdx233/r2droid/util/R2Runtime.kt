@@ -115,8 +115,9 @@ object R2Runtime {
         term: String,
         extraBindPaths: Set<String>
     ): LaunchSpec {
+        val guestShell = resolveGuestShell(context)
         val command = buildProotPrefix(context, term, extraBindPaths).apply {
-            addAll(listOf("/bin/bash", "--login", "-lc", shellCommand))
+            addAll(listOf(guestShell, "-l", "-c", shellCommand))
         }
         val hostTmpDir = ProotInstaller.getHostTmpDir(context).absolutePath
         return LaunchSpec(
@@ -130,8 +131,9 @@ object R2Runtime {
     }
 
     private fun buildInteractiveProotShellSpec(context: Context, term: String): LaunchSpec {
+        val guestShell = resolveGuestShell(context)
         val command = buildProotPrefix(context, term, collectBindPaths(context, null)).apply {
-            addAll(listOf("/bin/bash", "--login"))
+            addAll(listOf(guestShell, "-l"))
         }
         val hostTmpDir = ProotInstaller.getHostTmpDir(context).absolutePath
         return LaunchSpec(
@@ -176,10 +178,7 @@ object R2Runtime {
 
         listOf(
             "/dev/urandom" to "/dev/random",
-            "/proc/self/fd" to "/dev/fd",
-            "/proc/self/fd/0" to "/dev/stdin",
-            "/proc/self/fd/1" to "/dev/stdout",
-            "/proc/self/fd/2" to "/dev/stderr"
+            "/proc/self/fd" to "/dev/fd"
         ).forEach { (hostPath, guestPath) ->
             if (File(hostPath).exists()) {
                 command += listOf("-b", "$hostPath:$guestPath")
@@ -224,8 +223,7 @@ object R2Runtime {
 
     private fun shouldUseProot(rawArgs: String?): Boolean {
         if (!SettingsManager.useProotMode) return false
-        // Keep host r2frida sessions working until the proot environment provides its own plugin.
-        return rawArgs?.contains("frida://") != true
+        return true
     }
 
     private fun ensureProotReady(context: Context) {
@@ -273,6 +271,15 @@ object R2Runtime {
         SettingsManager.projectHome?.takeIf { it.isNotBlank() }?.let { bindPaths += it }
         filePath?.let { File(it).parentFile?.absolutePath?.let(bindPaths::add) }
         return bindPaths
+    }
+
+    private fun resolveGuestShell(context: Context): String {
+        val rootfsDir = ProotInstaller.getRootfsDir(context)
+        return when {
+            File(rootfsDir, "bin/bash").exists() -> "/bin/bash"
+            File(rootfsDir, "usr/bin/bash").exists() -> "/usr/bin/bash"
+            else -> "/bin/sh"
+        }
     }
 
     private fun shellEscape(value: String): String {
@@ -326,7 +333,7 @@ object R2Runtime {
         return TerminalLaunchSpec(
             executable = "/system/bin/sh",
             workingDirectory = context.filesDir.absolutePath,
-            args = arrayOf("-c", "$customCmd /bin/bash -l"),
+            args = arrayOf("-c", "$customCmd /bin/sh -l"),
             environment = arrayOf(
                 "TERM=xterm-256color",
                 "TMPDIR=${hostTmpDir.absolutePath}",

@@ -38,6 +38,7 @@ object SettingsManager {
     private const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
     private const val KEY_PROOT_BUILD_MODE = "proot_build_mode"
     private const val KEY_PROOT_CUSTOM_COMMAND = "proot_custom_command"
+    private const val KEY_PROOT_ROOTFS_ALIAS = "proot_rootfs_alias"
 
     private lateinit var prefs: SharedPreferences
 
@@ -208,4 +209,8 @@ object SettingsManager {
     var prootCustomCommand: String
         get() = prefs.getString(KEY_PROOT_CUSTOM_COMMAND, "") ?: ""
         set(value) { prefs.edit { putString(KEY_PROOT_CUSTOM_COMMAND, value) } }
+
+    var prootRootfsAlias: String
+        get() = prefs.getString(KEY_PROOT_ROOTFS_ALIAS, "ubuntu") ?: "ubuntu"
+        set(value) { prefs.edit { putString(KEY_PROOT_ROOTFS_ALIAS, value) } }
 }
