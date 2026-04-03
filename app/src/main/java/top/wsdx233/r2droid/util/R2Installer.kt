@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import top.wsdx233.r2droid.R
 import java.io.BufferedOutputStream
 import java.io.File
@@ -29,8 +30,8 @@ object R2Installer {
     private const val TAG = "R2Installer"
     private const val R2_DIR_NAME = "radare2"
     private const val R2_DATA_DIR_NAME = "r2work"
-    private const val ASSET_FILENAME = "r2.tar"
-    private const val R2_DATA_ASSET_FILENAME = "r2dir.tar"
+    private val CORE_ASSET_CANDIDATES = listOf("r2.tar.gz", "r2.tar")
+    private val DATA_ASSET_CANDIDATES = listOf("r2dir.tar.gz", "r2dir.tar")
     private const val EXPECTED_R2_VERSION = "6.1.0"
 
     // 使用 StateFlow 暴露当前状态给 UI
@@ -46,6 +47,9 @@ object R2Installer {
         initialized = false
         val targetDir = File(context.filesDir, R2_DIR_NAME)
         var isUpdate = false
+
+        runCatching { ProotInstaller.ensureRuntimeBinary(context) }
+            .onFailure { Log.w(TAG, "Failed to install bundled proot binary", it) }
 
         if (targetDir.exists()) {
             // 检测已安装的 r2 版本
@@ -75,7 +79,7 @@ object R2Installer {
             // 阶段 1: 解压 r2.tar (占进度的 0% - 50%)
             installFromAssets(
                 context,
-                ASSET_FILENAME,
+                resolveAssetName(context, CORE_ASSET_CANDIDATES),
                 context.filesDir,
                 progressStart = 0f,
                 progressEnd = 0.5f,
@@ -86,7 +90,7 @@ object R2Installer {
             // 阶段 2: 解压 r2dir.tar (占进度的 50% - 90%)
             installFromAssets(
                 context,
-                R2_DATA_ASSET_FILENAME,
+                resolveAssetName(context, DATA_ASSET_CANDIDATES),
                 File(context.filesDir, "$R2_DATA_DIR_NAME/radare2"),
                 progressStart = 0.5f,
                 progressEnd = 0.9f,
@@ -214,7 +218,7 @@ object R2Installer {
 
         // 创建一个包装流来统计读取字节数
         val rawInputStream = context.assets.open(assetName)
-        val progressInputStream = object : InputStream() {
+        val countingInput = object : InputStream() {
             override fun read(): Int {
                 val b = rawInputStream.read()
                 if (b != -1) updateProgress(1)
@@ -227,19 +231,16 @@ object R2Installer {
                 return read
             }
 
-            // 更新进度的限流逻辑，避免过于频繁更新 StateFlow
             private var lastUpdateBytes = 0L
             private fun updateProgress(bytesRead: Long) {
                 bytesReadTotal += bytesRead
-                // 每读取 100KB 更新一次 UI，或者总大小未知时
                 if (bytesReadTotal - lastUpdateBytes > 1024 * 100 || bytesReadTotal == totalBytes) {
                     lastUpdateBytes = bytesReadTotal
                     if (totalBytes > 0) {
                         val currentPercent = bytesReadTotal.toFloat() / totalBytes
                         val globalProgress = progressStart + (currentPercent * progressRange)
-                        _installState.value = InstallState(true, taskName, globalProgress)
+                        _installState.value = InstallState(true, taskName, globalProgress.coerceAtMost(progressEnd))
                     } else {
-                        // 无法获取大小时显示 indeterminate 状态或仅显示文字
                         _installState.value = InstallState(true, taskName, progressStart)
                     }
                 }
@@ -250,7 +251,13 @@ object R2Installer {
             }
         }
 
-        val tarIn = TarArchiveInputStream(progressInputStream)
+        val tarSource = if (assetName.endsWith(".gz")) {
+            GzipCompressorInputStream(countingInput)
+        } else {
+            countingInput
+        }
+
+        val tarIn = TarArchiveInputStream(tarSource)
         var entry: TarArchiveEntry?
 
         while (tarIn.nextEntry.also { entry = it } != null) {
@@ -275,6 +282,12 @@ object R2Installer {
         }
 
         tarIn.close()
+    }
+
+    private fun resolveAssetName(context: Context, candidates: List<String>): String {
+        val availableAssets = context.assets.list("")?.toSet().orEmpty()
+        return candidates.firstOrNull(availableAssets::contains)
+            ?: throw IllegalStateException("Missing asset: ${candidates.joinToString(" or ")}")
     }
 
     fun copyAssetFolder(context: Context, assetPath: String, targetParentDir: File) {

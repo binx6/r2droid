@@ -794,6 +794,8 @@
 
     <!-- R2Pipe Mode -->
     <string name="settings_r2pipe_mode">R2Pipe 模式</string>
+    <string name="settings_use_proot_mode">使用 Proot 模式</string>
+    <string name="settings_use_proot_mode_desc">让普通的 radare2 会话在 Ubuntu proot 容器中启动。首次开启会自动下载 Ubuntu Base、安装 radare2，并通过 r2pm 安装所需插件；将在下次打开会话时生效。</string>
     <string name="settings_use_http_mode">使用 HTTP 模式</string>
     <string name="settings_use_http_mode_desc">(实验性) 通过 HTTP 服务与 r2 通信, 更快但是可能存在一些问题（下次打开会话时生效）</string>
     <string name="settings_http_port">HTTP 端口</string>
@@ -808,6 +810,28 @@
     <string name="keep_alive_channel_name">后台分析</string>
     <string name="keep_alive_notification_title">R2Droid 运行中</string>
     <string name="keep_alive_notification_text">分析会话进行中</string>
+
+    <string name="proot_setup_title">Proot 环境安装</string>
+    <string name="proot_setup_preparing">正在准备 Ubuntu 环境...</string>
+    <string name="proot_setup_logs">日志</string>
+    <string name="proot_setup_close">关闭</string>
+    <string name="proot_build_mode_title">Proot 构建模式</string>
+    <string name="proot_build_mode_desc">选择如何配置 proot 环境</string>
+    <string name="proot_build_mode_auto">自动</string>
+    <string name="proot_build_mode_auto_desc">系统自动完成 proot 和 proot 中的 r2、插件、依赖项的全部配置</string>
+    <string name="proot_build_mode_manual">手动</string>
+    <string name="proot_build_mode_manual_desc">系统完成 Ubuntu proot 配置，然后用户自行通过 proot 终端配置 r2 和插件</string>
+    <string name="proot_build_mode_custom">自定义</string>
+    <string name="proot_build_mode_custom_desc">手动指定一个 proot 的启动命令，需要先自己配置好环境才能使用</string>
+    <string name="proot_custom_command">自定义 proot 命令</string>
+    <string name="proot_custom_command_desc">输入完整的 proot 启动命令</string>
+    <string name="proot_custom_command_hint">例如 /data/data/…/proot -r /path/to/rootfs …</string>
+    <string name="proot_open_terminal">打开 Proot 终端</string>
+    <string name="proot_open_terminal_desc">在 proot 环境中打开终端会话</string>
+    <string name="proot_build_mode_label">构建模式：%s</string>
+    <string name="proot_reinstall">重装 Proot</string>
+    <string name="proot_reinstall_desc">删除并重新安装 proot 环境</string>
+    <string name="proot_reinstall_confirm">这将删除当前的 proot 环境并从头重新安装。是否继续？</string>
 
     <string name="r2frida_feature_wip">即将推出</string>
     <string name="r2frida_feature_wip_desc">r2frida 功能正在开发中，插件已安装成功。</string>

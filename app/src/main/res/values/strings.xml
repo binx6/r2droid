@@ -792,6 +792,8 @@
 
     <!-- R2Pipe Mode -->
     <string name="settings_r2pipe_mode">R2Pipe Mode</string>
+    <string name="settings_use_proot_mode">Use Proot Mode</string>
+    <string name="settings_use_proot_mode_desc">Launch normal radare2 sessions inside an Ubuntu proot container. The first enable downloads Ubuntu Base, installs radare2, and sets up r2pm plugins. Takes effect on the next session.</string>
     <string name="settings_use_http_mode">Use HTTP Mode</string>
     <string name="settings_use_http_mode_desc">Communicate with r2 via HTTP server instead of stdio pipe (takes effect on next session)</string>
     <string name="settings_http_port">HTTP Port</string>
@@ -806,6 +808,28 @@
     <string name="keep_alive_channel_name">Background Analysis</string>
     <string name="keep_alive_notification_title">R2Droid is running</string>
     <string name="keep_alive_notification_text">Analysis session active</string>
+
+    <string name="proot_setup_title">Proot Setup</string>
+    <string name="proot_setup_preparing">Preparing Ubuntu environment...</string>
+    <string name="proot_setup_logs">Logs</string>
+    <string name="proot_setup_close">Close</string>
+    <string name="proot_build_mode_title">Proot Build Mode</string>
+    <string name="proot_build_mode_desc">Choose how to set up the proot environment</string>
+    <string name="proot_build_mode_auto">Automatic</string>
+    <string name="proot_build_mode_auto_desc">Automatically configure proot, radare2, plugins, and all dependencies</string>
+    <string name="proot_build_mode_manual">Manual</string>
+    <string name="proot_build_mode_manual_desc">Set up Ubuntu proot only, then configure radare2 and plugins yourself via the proot terminal</string>
+    <string name="proot_build_mode_custom">Custom</string>
+    <string name="proot_build_mode_custom_desc">Specify a custom proot launch command. You must configure the environment yourself first</string>
+    <string name="proot_custom_command">Custom proot command</string>
+    <string name="proot_custom_command_desc">Enter the full proot launch command</string>
+    <string name="proot_custom_command_hint">e.g. /data/data/…/proot -r /path/to/rootfs …</string>
+    <string name="proot_open_terminal">Open Proot Terminal</string>
+    <string name="proot_open_terminal_desc">Open a terminal session inside the proot environment</string>
+    <string name="proot_build_mode_label">Build mode: %s</string>
+    <string name="proot_reinstall">Reinstall Proot</string>
+    <string name="proot_reinstall_desc">Delete and reinstall the proot environment</string>
+    <string name="proot_reinstall_confirm">This will delete the current proot environment and reinstall it from scratch. Continue?</string>
 
     <string name="r2frida_feature_wip">Coming Soon</string>
     <string name="r2frida_feature_wip_desc">r2frida features are under development. The plugin has been installed successfully.</string>

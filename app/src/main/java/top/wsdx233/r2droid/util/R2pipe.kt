@@ -16,9 +16,13 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import kotlin.math.min
 
-class R2pipe(context: Context, private val filePath: String? = null, private val flags: String = "", private val rawArgs: String? = null) {
-
-    private val filesDir: File = context.filesDir
+class R2pipe(
+    context: Context,
+    private val filePath: String? = null,
+    private val flags: String = "",
+    private val rawArgs: String? = null
+) {
+    private val appContext: Context = context.applicationContext
     private var process: Process? = null
     private var inputStream: BufferedInputStream? = null
     private var outputStream: OutputStream? = null
@@ -39,26 +43,10 @@ class R2pipe(context: Context, private val filePath: String? = null, private val
 
     private fun startR2Process() {
         try {
-            val workDir = File(filesDir, "radare2/bin")
-            if (!workDir.exists()) workDir.mkdirs()
-
-            val envMap = parseEnvArray(buildEnvironmentVariables())
-            val r2Binary = File(workDir, "r2").absolutePath
-
-            // 使用 sh 启动
-            val cmdArgs = if (rawArgs != null) {
-                "$r2Binary -q0 $rawArgs"
-            } else if (filePath != null) {
-                "$r2Binary -q0 $flags \"$filePath\""
-            } else {
-                "$r2Binary -q0 -"
-            }
-
-            val command = listOf("/system/bin/sh", "-c", cmdArgs)
-
-            val processBuilder = ProcessBuilder(command)
-            processBuilder.directory(workDir)
-            processBuilder.environment().putAll(envMap)
+            val launchSpec = R2Runtime.buildStdioLaunch(appContext, filePath, flags, rawArgs)
+            val processBuilder = ProcessBuilder(launchSpec.command)
+            processBuilder.directory(launchSpec.workingDirectory)
+            processBuilder.environment().putAll(launchSpec.environment)
 
             // 必须分离 stderr，否则日志混入 stdout 会导致协议解析错误
             processBuilder.redirectErrorStream(false)
@@ -100,30 +88,6 @@ class R2pipe(context: Context, private val filePath: String? = null, private val
         }
     }
 
-    private fun buildEnvironmentVariables(): List<String> = mutableListOf<String>().apply {
-        val existingLd = System.getenv("LD_LIBRARY_PATH")
-        val myLd = "${File(filesDir, "radare2/lib")}:${File(filesDir, "libs")}"
-        add("LD_LIBRARY_PATH=$myLd${if (existingLd != null) ":$existingLd" else ""}")
-
-        add("XDG_DATA_HOME=${File(filesDir, "r2work")}")
-        add("XDG_CACHE_HOME=${File(filesDir, ".cache")}")
-        add("HOME=${File(filesDir, "radare2/bin")}")
-
-        // 禁用颜色和控制码
-        add("TERM=dumb")
-        add("R2_NOCOLOR=1")
-
-        val systemPath = System.getenv("PATH") ?: "/system/bin:/system/xbin"
-        val customBin = File(filesDir, "radare2/bin").absolutePath
-        add("PATH=$customBin:$systemPath")
-    }
-
-    private fun parseEnvArray(envs: List<String>): Map<String, String> = mutableMapOf<String, String>().apply {
-        for (env in envs) {
-            val parts = env.split("=", limit = 2)
-            if (parts.size == 2) this[parts[0]] = parts[1]
-        }
-    }
 
     /**
      * 清理输入流中的残留数据

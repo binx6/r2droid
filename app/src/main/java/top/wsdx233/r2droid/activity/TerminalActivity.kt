@@ -20,7 +20,7 @@ import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
 import top.wsdx233.r2droid.R
-import java.io.File
+import top.wsdx233.r2droid.util.R2Runtime
 
 class TerminalActivity : ComponentActivity() {
 
@@ -189,32 +189,12 @@ class TerminalActivity : ComponentActivity() {
     }
 
     private fun createTerminalSession(): TerminalSession {
-        val workDir = File(filesDir, "radare2/bin").absolutePath
-        File(workDir).mkdirs()
-
-        val envs = mutableListOf<String>()
-//        envs.add("LD_LIBRARY_PATH=${File(filesDir,"radare2/lib")}:${File(filesDir,"libs")}")
-
-        val existingLd = System.getenv("LD_LIBRARY_PATH")
-        val myLd = "${File(filesDir,"radare2/lib")}:${File(filesDir,"libs")}"
-        envs.add("LD_LIBRARY_PATH=${if (existingLd != null) "$myLd:$existingLd" else myLd}")
-
-        envs.add("XDG_DATA_HOME=${File(filesDir, "r2work")}")
-        envs.add("XDG_CACHE_HOME=${File(filesDir, ".cache")}")
-        envs.add("HOME=${File(filesDir,"radare2/bin")}")
-//        envs.add("PATH=${File(filesDir,"radare2/bin")}")
-
-        val systemPath = System.getenv("PATH") ?: "/system/bin:/system/xbin"
-
-        val customBin = File(filesDir, "radare2/bin").absolutePath
-        val newPath = "$customBin:$systemPath"
-        envs.add("PATH=$newPath")
-
+        val launchSpec = R2Runtime.buildTerminalLaunch(this)
         return TerminalSession(
-            "/system/bin/sh",
-            workDir,
-            null,
-            envs.toTypedArray(),
+            launchSpec.executable,
+            launchSpec.workingDirectory,
+            launchSpec.args,
+            launchSpec.environment,
             2000,
             terminalSessionClient
         )

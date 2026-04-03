@@ -22,7 +22,7 @@ class R2pipeHttp(
     private val port: Int = 9090
 ) {
 
-    private val filesDir: File = context.filesDir
+    private val appContext: Context = context.applicationContext
     private var process: Process? = null
     @Volatile
     private var isRunning = false
@@ -34,25 +34,10 @@ class R2pipeHttp(
 
     private fun startR2HttpServer() {
         try {
-            val workDir = File(filesDir, "radare2/bin")
-            if (!workDir.exists()) workDir.mkdirs()
-
-            val envMap = parseEnvArray(buildEnvironmentVariables())
-            val r2Binary = File(workDir, "r2").absolutePath
-
-            val cmdArgs = if (rawArgs != null) {
-                "$r2Binary -qc=H -e http.port=$port $rawArgs"
-            } else if (filePath != null) {
-                "$r2Binary -qc=H -e http.port=$port $flags \"$filePath\""
-            } else {
-                "$r2Binary -qc=H -e http.port=$port -"
-            }
-
-            val command = listOf("/system/bin/sh", "-c", cmdArgs)
-
-            val processBuilder = ProcessBuilder(command)
-            processBuilder.directory(workDir)
-            processBuilder.environment().putAll(envMap)
+            val launchSpec = R2Runtime.buildHttpLaunch(appContext, filePath, flags, rawArgs, port)
+            val processBuilder = ProcessBuilder(launchSpec.command)
+            processBuilder.directory(launchSpec.workingDirectory)
+            processBuilder.environment().putAll(launchSpec.environment)
             processBuilder.redirectErrorStream(false)
 
             process = processBuilder.start()
@@ -124,22 +109,6 @@ class R2pipeHttp(
         throw RuntimeException("R2 HTTP server did not become ready within ${maxRetries * intervalMs}ms")
     }
 
-    private fun buildEnvironmentVariables(): List<String> {
-        val envs = mutableListOf<String>()
-        val existingLd = System.getenv("LD_LIBRARY_PATH")
-        val myLd = "${File(filesDir, "radare2/lib")}:${File(filesDir, "libs")}"
-        envs.add("LD_LIBRARY_PATH=$myLd${if (existingLd != null) ":$existingLd" else ""}")
-        envs.add("XDG_DATA_HOME=${File(filesDir, "r2work")}")
-        envs.add("XDG_CACHE_HOME=${File(filesDir, ".cache")}")
-        envs.add("HOME=${File(filesDir, "radare2/bin")}")
-        envs.add("TERM=dumb")
-        envs.add("R2_NOCOLOR=1")
-        val systemPath = System.getenv("PATH") ?: "/system/bin:/system/xbin"
-        val customBin = File(filesDir, "radare2/bin").absolutePath
-        envs.add("PATH=$customBin:$systemPath")
-        return envs
-    }
-
     /**
      * r2 HTTP server 的自定义 URL 编码。
      * 只编码必须转义的字符，其余特殊字符保持原样传递。
@@ -157,17 +126,6 @@ class R2pipeHttp(
             }
         }
         return sb.toString()
-    }
-
-    private fun parseEnvArray(envs: List<String>): Map<String, String> {
-        val envMap = mutableMapOf<String, String>()
-        for (env in envs) {
-            val parts = env.split("=", limit = 2)
-            if (parts.size == 2) {
-                envMap[parts[0]] = parts[1]
-            }
-        }
-        return envMap
     }
 
     fun cmd(command: String): String {

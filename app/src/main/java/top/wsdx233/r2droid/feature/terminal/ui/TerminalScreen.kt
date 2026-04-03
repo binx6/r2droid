@@ -57,7 +57,7 @@ import kotlinx.coroutines.launch
 import top.wsdx233.r2droid.R
 import top.wsdx233.r2droid.core.ui.components.CommandSuggestButton
 import top.wsdx233.r2droid.core.ui.components.CommandSuggestionPanel
-import java.io.File
+import top.wsdx233.r2droid.util.R2Runtime
 
 /**
  * Terminal Screen that embeds a TerminalView to display a shell session.
@@ -149,27 +149,12 @@ fun TerminalScreen() {
                     })
                     
                     // Create terminal session
-                    val workDir = File(ctx.filesDir, "radare2/bin").absolutePath
-                    File(workDir).mkdirs()
-
-                    val envs = mutableListOf<String>()
-                    val existingLd = System.getenv("LD_LIBRARY_PATH")
-                    val myLd = "${File(ctx.filesDir, "radare2/lib")}:${File(ctx.filesDir, "libs")}"
-                    envs.add("LD_LIBRARY_PATH=${if (existingLd != null) "$myLd:$existingLd" else myLd}")
-                    envs.add("XDG_DATA_HOME=${File(ctx.filesDir, "r2work")}")
-                    envs.add("XDG_CACHE_HOME=${File(ctx.filesDir, ".cache")}")
-                    envs.add("HOME=${File(ctx.filesDir, "radare2/bin")}")
-                    
-                    val systemPath = System.getenv("PATH") ?: "/system/bin:/system/xbin"
-                    val customBin = File(ctx.filesDir, "radare2/bin").absolutePath
-                    val newPath = "$customBin:$systemPath"
-                    envs.add("PATH=$newPath")
-                    
+                    val launchSpec = R2Runtime.buildTerminalLaunch(ctx)
                     val session = TerminalSession(
-                        "/system/bin/sh",
-                        workDir,
-                        null,
-                        envs.toTypedArray(),
+                        launchSpec.executable,
+                        launchSpec.workingDirectory,
+                        launchSpec.args,
+                        launchSpec.environment,
                         2000,
                         object : TerminalSessionClient {
                             override fun onTextChanged(changedSession: TerminalSession) {

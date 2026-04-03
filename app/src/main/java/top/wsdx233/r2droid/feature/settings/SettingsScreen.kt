@@ -66,9 +66,12 @@ import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.MainScope
 import org.json.JSONArray
 import org.json.JSONObject
+import top.wsdx233.r2droid.activity.TerminalActivity
+import top.wsdx233.r2droid.core.ui.dialogs.ProotInstallDialog
 import top.wsdx233.r2droid.service.KeepAliveService
 import top.wsdx233.r2droid.util.AppCacheCleaner
 import top.wsdx233.r2droid.util.DocumentsUiOpenDocumentTreeContract
+import top.wsdx233.r2droid.util.ProotInstaller
 import top.wsdx233.r2droid.util.UpdateManager
 import java.io.File
 
@@ -168,6 +171,15 @@ class SettingsViewModel : ViewModel() {
 
     private val _useHttpMode = MutableStateFlow(SettingsManager.useHttpMode)
     val useHttpMode = _useHttpMode.asStateFlow()
+
+    private val _useProotMode = MutableStateFlow(SettingsManager.useProotMode)
+    val useProotMode = _useProotMode.asStateFlow()
+
+    private val _prootBuildMode = MutableStateFlow(SettingsManager.prootBuildMode)
+    val prootBuildMode = _prootBuildMode.asStateFlow()
+
+    private val _prootCustomCommand = MutableStateFlow(SettingsManager.prootCustomCommand)
+    val prootCustomCommand = _prootCustomCommand.asStateFlow()
 
     private val _httpPort = MutableStateFlow(SettingsManager.httpPort)
     val httpPort = _httpPort.asStateFlow()
@@ -317,6 +329,21 @@ class SettingsViewModel : ViewModel() {
         _useHttpMode.value = value
     }
 
+    fun setUseProotMode(value: Boolean) {
+        SettingsManager.useProotMode = value
+        _useProotMode.value = value
+    }
+
+    fun setProotBuildMode(value: String) {
+        SettingsManager.prootBuildMode = value
+        _prootBuildMode.value = value
+    }
+
+    fun setProotCustomCommand(value: String) {
+        SettingsManager.prootCustomCommand = value
+        _prootCustomCommand.value = value
+    }
+
     fun setHttpPort(value: Int) {
         SettingsManager.httpPort = value
         _httpPort.value = value
@@ -386,6 +413,9 @@ class SettingsViewModel : ViewModel() {
         SettingsManager.aiEnabled = true
         SettingsManager.aiOutputTruncateLimit = 100000
         SettingsManager.useHttpMode = false
+        SettingsManager.useProotMode = false
+        SettingsManager.prootBuildMode = "auto"
+        SettingsManager.prootCustomCommand = ""
         SettingsManager.httpPort = 9090
         SettingsManager.defaultJumpTarget = "ask"
         _fontPath.value = null
@@ -403,6 +433,9 @@ class SettingsViewModel : ViewModel() {
         _aiEnabled.value = true
         _aiOutputTruncateLimit.value = 100000
         _useHttpMode.value = false
+        _useProotMode.value = false
+        _prootBuildMode.value = "auto"
+        _prootCustomCommand.value = ""
         _httpPort.value = 9090
         _defaultJumpTarget.value = "ask"
         loadPersistedTreeAccess(context)
@@ -432,14 +465,22 @@ fun SettingsScreen(
     val aiEnabled by viewModel.aiEnabled.collectAsState()
     val aiOutputTruncateLimit by viewModel.aiOutputTruncateLimit.collectAsState()
     val useHttpMode by viewModel.useHttpMode.collectAsState()
+    val useProotMode by viewModel.useProotMode.collectAsState()
+    val prootBuildMode by viewModel.prootBuildMode.collectAsState()
+    val prootCustomCommand by viewModel.prootCustomCommand.collectAsState()
     val httpPort by viewModel.httpPort.collectAsState()
     val defaultJumpTarget by viewModel.defaultJumpTarget.collectAsState()
 
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val prootInstallState by ProotInstaller.state.collectAsState()
+    val prootToggleChecked = useProotMode || prootInstallState.isWorking
     
-    LaunchedEffect(Unit) {
+    LaunchedEffect(useProotMode) {
         viewModel.loadR2rcContent(context)
+    }
+
+    LaunchedEffect(Unit) {
         viewModel.loadPersistedTreeAccess(context)
     }
     
@@ -459,6 +500,11 @@ fun SettingsScreen(
     var showHttpPortDialog by remember { mutableStateOf(false) }
     var tempHttpPort by remember { mutableStateOf("") }
     var showDefaultJumpTargetDialog by remember { mutableStateOf(false) }
+    var showProotBuildModeDialog by remember { mutableStateOf(false) }
+    var showProotCustomCommandDialog by remember { mutableStateOf(false) }
+    var tempProotCustomCommand by remember { mutableStateOf("") }
+    var pendingProotBuildMode by remember { mutableStateOf("auto") }
+    var showProotReinstallDialog by remember { mutableStateOf(false) }
     var pendingNewProjectHome by remember { mutableStateOf<String?>(null) }
     var oldProjectHome by remember { mutableStateOf<String?>(null) }
     
@@ -662,6 +708,77 @@ fun SettingsScreen(
             item {
                 HorizontalDivider()
                 SettingsSectionHeader(stringResource(R.string.settings_r2pipe_mode))
+            }
+
+            item {
+                SettingsToggleItem(
+                    title = stringResource(R.string.settings_use_proot_mode),
+                    subtitle = stringResource(R.string.settings_use_proot_mode_desc),
+                    checked = prootToggleChecked,
+                    onCheckedChange = { enabled ->
+                        if (prootInstallState.isWorking) {
+                            Unit
+                        } else if (!enabled) {
+                            viewModel.setUseProotMode(false)
+                        } else {
+                            // Show build mode selection dialog
+                            showProotBuildModeDialog = true
+                        }
+                    }
+                )
+            }
+
+            if (useProotMode) {
+                item {
+                    val buildModeLabel = when (prootBuildMode) {
+                        "manual" -> stringResource(R.string.proot_build_mode_manual)
+                        "custom" -> stringResource(R.string.proot_build_mode_custom)
+                        else -> stringResource(R.string.proot_build_mode_auto)
+                    }
+                    SettingsItem(
+                        title = stringResource(R.string.proot_build_mode_title),
+                        subtitle = stringResource(R.string.proot_build_mode_label, buildModeLabel),
+                        icon = Icons.Default.Settings,
+                        onClick = { showProotBuildModeDialog = true }
+                    )
+                }
+
+                if (prootBuildMode == "custom") {
+                    item {
+                        SettingsItem(
+                            title = stringResource(R.string.proot_custom_command),
+                            subtitle = prootCustomCommand.ifBlank { stringResource(R.string.proot_custom_command_hint) },
+                            icon = Icons.Default.Settings,
+                            onClick = {
+                                tempProotCustomCommand = prootCustomCommand
+                                showProotCustomCommandDialog = true
+                            }
+                        )
+                    }
+                }
+
+                item {
+                    SettingsItem(
+                        title = stringResource(R.string.proot_open_terminal),
+                        subtitle = stringResource(R.string.proot_open_terminal_desc),
+                        icon = Icons.Default.ChevronRight,
+                        onClick = {
+                            val intent = Intent(context, TerminalActivity::class.java)
+                            context.startActivity(intent)
+                        }
+                    )
+                }
+
+                if (prootBuildMode != "custom") {
+                    item {
+                        SettingsItem(
+                            title = stringResource(R.string.proot_reinstall),
+                            subtitle = stringResource(R.string.proot_reinstall_desc),
+                            icon = Icons.Default.Restore,
+                            onClick = { showProotReinstallDialog = true }
+                        )
+                    }
+                }
             }
 
             item {
@@ -1203,6 +1320,188 @@ fun SettingsScreen(
                     Text(stringResource(R.string.settings_cancel))
                 }
             }
+        )
+    }
+
+    if (showProotBuildModeDialog) {
+        AlertDialog(
+            onDismissRequest = { showProotBuildModeDialog = false },
+            title = { Text(stringResource(R.string.proot_build_mode_title)) },
+            text = {
+                Column {
+                    Text(
+                        text = stringResource(R.string.proot_build_mode_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    // Auto
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                pendingProotBuildMode = "auto"
+                                viewModel.setProotBuildMode("auto")
+                                showProotBuildModeDialog = false
+                                coroutineScope.launch {
+                                    if (ProotInstaller.isEnvironmentReady(context)) {
+                                        viewModel.setUseProotMode(true)
+                                    } else {
+                                        val result = ProotInstaller.install(context)
+                                        viewModel.setUseProotMode(result.isSuccess)
+                                    }
+                                }
+                            }
+                            .padding(vertical = 8.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = prootBuildMode == "auto" && useProotMode,
+                            onClick = null
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(stringResource(R.string.proot_build_mode_auto))
+                            Text(
+                                text = stringResource(R.string.proot_build_mode_auto_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    // Manual
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                pendingProotBuildMode = "manual"
+                                viewModel.setProotBuildMode("manual")
+                                showProotBuildModeDialog = false
+                                coroutineScope.launch {
+                                    if (ProotInstaller.isEnvironmentReady(context)) {
+                                        viewModel.setUseProotMode(true)
+                                    } else {
+                                        val result = ProotInstaller.installManual(context)
+                                        viewModel.setUseProotMode(result.isSuccess)
+                                    }
+                                }
+                            }
+                            .padding(vertical = 8.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = prootBuildMode == "manual" && useProotMode,
+                            onClick = null
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(stringResource(R.string.proot_build_mode_manual))
+                            Text(
+                                text = stringResource(R.string.proot_build_mode_manual_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    // Custom
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                pendingProotBuildMode = "custom"
+                                viewModel.setProotBuildMode("custom")
+                                viewModel.setUseProotMode(true)
+                                showProotBuildModeDialog = false
+                            }
+                            .padding(vertical = 8.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = prootBuildMode == "custom" && useProotMode,
+                            onClick = null
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(stringResource(R.string.proot_build_mode_custom))
+                            Text(
+                                text = stringResource(R.string.proot_build_mode_custom_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showProotBuildModeDialog = false }) {
+                    Text(stringResource(R.string.settings_cancel))
+                }
+            }
+        )
+    }
+
+    if (showProotCustomCommandDialog) {
+        AlertDialog(
+            onDismissRequest = { showProotCustomCommandDialog = false },
+            title = { Text(stringResource(R.string.proot_custom_command)) },
+            text = {
+                Column(modifier = Modifier.focusable()) {
+                    OutlinedTextField(
+                        value = tempProotCustomCommand,
+                        onValueChange = { tempProotCustomCommand = it },
+                        label = { Text(stringResource(R.string.proot_custom_command_desc)) },
+                        placeholder = { Text(stringResource(R.string.proot_custom_command_hint)) },
+                        modifier = Modifier.fillMaxWidth().height(150.dp),
+                        maxLines = 5
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.setProotCustomCommand(tempProotCustomCommand)
+                    showProotCustomCommandDialog = false
+                }) {
+                    Text(stringResource(R.string.settings_save))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showProotCustomCommandDialog = false }) {
+                    Text(stringResource(R.string.settings_cancel))
+                }
+            }
+        )
+    }
+
+    if (showProotReinstallDialog) {
+        AlertDialog(
+            onDismissRequest = { showProotReinstallDialog = false },
+            title = { Text(stringResource(R.string.proot_reinstall)) },
+            text = { Text(stringResource(R.string.proot_reinstall_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showProotReinstallDialog = false
+                    coroutineScope.launch {
+                        if (prootBuildMode == "manual") {
+                            ProotInstaller.installManual(context, forceReinstall = true)
+                        } else {
+                            ProotInstaller.install(context, forceReinstall = true)
+                        }
+                    }
+                }) {
+                    Text(stringResource(R.string.settings_reset))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showProotReinstallDialog = false }) {
+                    Text(stringResource(R.string.settings_cancel))
+                }
+            }
+        )
+    }
+
+    if (prootInstallState.status != top.wsdx233.r2droid.util.ProotInstallState.Status.IDLE) {
+        ProotInstallDialog(
+            state = prootInstallState,
+            onClose = { ProotInstaller.resetState() }
         )
     }
 

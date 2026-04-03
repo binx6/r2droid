@@ -4,10 +4,11 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.core.content.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import top.wsdx233.r2droid.util.ProotInstaller
 import java.io.File
-import androidx.core.content.edit
 
 object SettingsManager {
     private const val PREFS_NAME = "r2droid_settings"
@@ -29,11 +30,14 @@ object SettingsManager {
     private const val KEY_AI_ENABLED = "ai_enabled"
     private const val KEY_AI_OUTPUT_TRUNCATE_LIMIT = "ai_output_truncate_limit"
     private const val KEY_USE_HTTP_MODE = "use_http_mode"
+    private const val KEY_USE_PROOT_MODE = "use_proot_mode"
     private const val KEY_HTTP_PORT = "http_port"
     private const val KEY_ANALYSIS_BENCHMARK_SCORE = "analysis_benchmark_score"
     private const val KEY_ANALYSIS_BENCHMARK_AT = "analysis_benchmark_at"
     private const val KEY_DEFAULT_JUMP_TARGET = "default_jump_target"
     private const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
+    private const val KEY_PROOT_BUILD_MODE = "proot_build_mode"
+    private const val KEY_PROOT_CUSTOM_COMMAND = "proot_custom_command"
 
     private lateinit var prefs: SharedPreferences
 
@@ -57,6 +61,11 @@ object SettingsManager {
     private var _r2rcFile: File? = null
     
     fun getR2rcFile(context: Context): File {
+        if (useProotMode) {
+            val file = ProotInstaller.getR2rcFile(context)
+            file.parentFile?.mkdirs()
+            return file
+        }
         if (_r2rcFile == null) {
             val binDir = File(context.filesDir, "radare2/bin")
             if (!binDir.exists()) binDir.mkdirs()
@@ -163,6 +172,10 @@ object SettingsManager {
         get() = prefs.getBoolean(KEY_USE_HTTP_MODE, false)
         set(value) { prefs.edit { putBoolean(KEY_USE_HTTP_MODE, value) } }
 
+    var useProotMode: Boolean
+        get() = prefs.getBoolean(KEY_USE_PROOT_MODE, false)
+        set(value) { prefs.edit { putBoolean(KEY_USE_PROOT_MODE, value) } }
+
     var httpPort: Int
         get() = prefs.getInt(KEY_HTTP_PORT, 9090)
         set(value) { prefs.edit { putInt(KEY_HTTP_PORT, value) } }
@@ -186,4 +199,13 @@ object SettingsManager {
             prefs.edit { putBoolean(KEY_AUTO_CHECK_UPDATES, value) }
             _autoCheckUpdatesFlow.value = value
         }
+
+    // "auto", "manual", "custom"
+    var prootBuildMode: String
+        get() = prefs.getString(KEY_PROOT_BUILD_MODE, "auto") ?: "auto"
+        set(value) { prefs.edit { putString(KEY_PROOT_BUILD_MODE, value) } }
+
+    var prootCustomCommand: String
+        get() = prefs.getString(KEY_PROOT_CUSTOM_COMMAND, "") ?: ""
+        set(value) { prefs.edit { putString(KEY_PROOT_CUSTOM_COMMAND, value) } }
 }
