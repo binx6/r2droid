@@ -3,6 +3,8 @@
 /**
  * Repository to fetch analysis data from R2Pipe.
  */
+import android.util.Log
+import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 import top.wsdx233.r2droid.core.data.model.ArchInfo
@@ -43,55 +45,125 @@ class ProjectRepository @Inject constructor(
     private val aiRepository: AiRepository
 ) {
 
-    suspend fun getOverview(): Result<BinInfo> {
-        return runCatching {
-            val ijOutput = R2PipeManager.executeJson("ij").getOrThrow()
-            if (ijOutput.isBlank()) throw RuntimeException("Empty response from r2")
-            val baseInfo = BinInfo.fromJson(JSONObject(ijOutput))
-            
-            val entropyOut = R2PipeManager.executeJson("p=ej 64").getOrDefault("{}")
-            val entropyData = EntropyData.fromJson(JSONObject(entropyOut))
+    companion object {
+        private const val TAG = "ProjectRepository"
+        private const val JSON_RETRY_DELAY_MS = 80L
+    }
 
-            val blockStatsOut = R2PipeManager.executeJson("p-j 64 @ 0").getOrDefault("{}")
-            val blockStats = BlockStatsData.fromJson(JSONObject(blockStatsOut))
-            
-            val hashesOut = R2PipeManager.executeJson("itj").getOrDefault("{}")
-            val hashes = HashInfo.fromJson(JSONObject(hashesOut))
-            
-            val mainAddrOut = R2PipeManager.executeJson("iMj").getOrDefault("{}")
-            val mainAddr = MainAddressInfo.fromJson(JSONObject(mainAddrOut))
-            
+    suspend fun getOverview(): Result<BinInfo> {
+        return try {
+            val baseInfo = BinInfo.fromJson(executeRequiredJsonObject("ij"))
+
+            val entropyData = executeOptionalJsonObject("p=ej 64")?.let(EntropyData::fromJson)
+            val blockStats = executeOptionalJsonObject("p-j 64 @ 0")?.let(BlockStatsData::fromJson)
+            val hashes = executeOptionalJsonObject("itj")?.let(HashInfo::fromJson)
+            val mainAddr = executeOptionalJsonObject("iMj")?.let(MainAddressInfo::fromJson)
+
             val guessedSizeOut = R2PipeManager.execute("igj").getOrDefault("0").trim()
             val guessedSize = guessedSizeOut.removePrefix("0x").toLongOrNull(16) ?: 0L
-            
-            val entryPointsOut = R2PipeManager.executeJson("iej").getOrDefault("[]")
-            val entryPointsArr = if (entryPointsOut.startsWith("[")) JSONArray(entryPointsOut) else JSONArray()
-            val entryPoints = mutableListOf<EntryPoint>()
-            for (i in 0 until entryPointsArr.length()) {
-                entryPoints.add(EntryPoint.fromJson(entryPointsArr.getJSONObject(i)))
-            }
-            
-            val archsOut = R2PipeManager.executeJson("iaj").getOrDefault("{}")
-            val archs = ArchInfo.parseList(if (archsOut.startsWith("{")) JSONObject(archsOut) else JSONObject())
-            
-            val headersOut = R2PipeManager.executeJson("ihj").getOrDefault("[]")
-            val headers = HeaderInfo.parseList(if (headersOut.startsWith("[")) JSONArray(headersOut) else JSONArray())
-            
-            val headersStrOut = R2PipeManager.executeJson("iHj").getOrDefault("{}")
-            val headersString = (if (headersStrOut.startsWith("{")) JSONObject(headersStrOut) else JSONObject()).optString("header", "")
-            
-            baseInfo.copy(
-                entropy = entropyData,
-                blockStats = blockStats,
-                hashes = hashes,
-                mainAddr = mainAddr,
-                guessedSize = guessedSize,
-                entryPoints = entryPoints,
-                archs = archs,
-                headers = headers,
-                headersString = headersString
+
+            val entryPoints = executeOptionalJsonArray("iej")
+                ?.let { entryPointsArr ->
+                    buildList {
+                        for (i in 0 until entryPointsArr.length()) {
+                            add(EntryPoint.fromJson(entryPointsArr.getJSONObject(i)))
+                        }
+                    }
+                }
+                ?: emptyList()
+
+            val archs = executeOptionalJsonObject("iaj")?.let(ArchInfo::parseList) ?: emptyList()
+            val headers = executeOptionalJsonArray("ihj")?.let(HeaderInfo::parseList) ?: emptyList()
+            val headersString = extractOptionalHeaderString("iHj")
+
+            Result.success(
+                baseInfo.copy(
+                    entropy = entropyData,
+                    blockStats = blockStats,
+                    hashes = hashes,
+                    mainAddr = mainAddr,
+                    guessedSize = guessedSize,
+                    entryPoints = entryPoints,
+                    archs = archs,
+                    headers = headers,
+                    headersString = headersString
+                )
             )
+        } catch (t: Throwable) {
+            Result.failure(t)
         }
+    }
+
+    private suspend fun executeRequiredJsonObject(cmd: String, attempts: Int = 3): JSONObject {
+        var lastError: Throwable? = null
+        repeat(attempts) { attempt ->
+            val raw = R2PipeManager.executeJson(cmd).getOrThrow()
+            val payload = extractJsonPayload(raw)
+            if (payload.startsWith("{")) {
+                return JSONObject(payload)
+            }
+
+            lastError = IllegalStateException(
+                "Unexpected JSON root for $cmd: ${previewJson(payload)}"
+            )
+            Log.w(TAG, "Unexpected JSON root for $cmd on attempt ${attempt + 1}/$attempts: ${previewJson(payload)}")
+            if (attempt < attempts - 1) delay(JSON_RETRY_DELAY_MS)
+        }
+        throw lastError ?: IllegalStateException("$cmd returned no JSON object")
+    }
+
+    private suspend fun executeOptionalJsonObject(cmd: String): JSONObject? {
+        return executeOptionalJsonPayload(cmd, expectedRoot = '{')?.let(::JSONObject)
+    }
+
+    private suspend fun executeOptionalJsonArray(cmd: String): JSONArray? {
+        return executeOptionalJsonPayload(cmd, expectedRoot = '[')?.let(::JSONArray)
+    }
+
+    private suspend fun executeOptionalJsonPayload(cmd: String, expectedRoot: Char): String? {
+        val raw = R2PipeManager.executeJson(cmd).getOrNull().orEmpty()
+        if (raw.isBlank()) return null
+
+        val payload = extractJsonPayload(raw)
+        if (payload.isBlank()) return null
+        if (payload.firstOrNull() == expectedRoot) return payload
+
+        Log.w(
+            TAG,
+            "Ignoring unexpected JSON root for optional command $cmd: ${previewJson(payload)}"
+        )
+        return null
+    }
+
+    private suspend fun extractOptionalHeaderString(cmd: String): String? {
+        val raw = R2PipeManager.executeJson(cmd).getOrNull().orEmpty()
+        if (raw.isBlank()) return null
+
+        val payload = extractJsonPayload(raw)
+        return when {
+            payload.startsWith("{") -> JSONObject(payload).optString("header", "").ifBlank { null }
+            payload.startsWith("[") -> {
+                Log.w(TAG, "$cmd returned a JSON array instead of an object, falling back to structured headers")
+                null
+            }
+            else -> {
+                Log.w(TAG, "Ignoring unexpected header payload from $cmd: ${previewJson(payload)}")
+                null
+            }
+        }
+    }
+
+    private fun extractJsonPayload(raw: String): String {
+        val trimmed = raw.trim()
+        val idx = trimmed.indexOfFirst { it == '{' || it == '[' }
+        return if (idx >= 0) trimmed.substring(idx).trim() else trimmed
+    }
+
+    private fun previewJson(payload: String): String {
+        return payload
+            .replace('\n', ' ')
+            .replace('\r', ' ')
+            .take(240)
     }
 
     /**
