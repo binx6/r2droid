@@ -58,8 +58,11 @@ Thanks to the **Radare2**, **Frida**, and **Termux** communities.
 
 - [@wsdx233](https://github.com/wsdx233)
 - [@binx6](https://github.com/binx6)
+- [@AbhiTheModder](https://github.com/AbhiTheModder)
 
 See the latest list on GitHub: [Contributors](https://github.com/wsdx233/r2droid/graphs/contributors)
+
+![Alt](https://repobeats.axiom.co/api/embed/139f78104e5784eb504768fe892367694f5ed0b7.svg "Repobeats analytics image")
 
 ---
 ## Star History
